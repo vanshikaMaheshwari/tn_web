@@ -199,7 +199,7 @@ function Readout({ c, mode, onRefresh, refreshing, interestsSlot }) {
       <div className="tn-between">
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Icon name="spark" size={20} color="var(--tn-blue)" />{label('AI READ-OUT')}</span>
         <span className="tn-mono" style={{ fontSize: 12, color: 'var(--tn-muted)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          {c.aiSource === 'gemini' ? 'Gemini 2.5 Flash' : 'Rules engine'} · {ago(c.aiGeneratedAt)}
+          {c.aiSource === 'gemini' ? 'Gemini 3.5 Flash' : 'Rules engine'} · {ago(c.aiGeneratedAt)}
           {onRefresh && (
             <button onClick={onRefresh} disabled={refreshing} className="tn-mono" style={{ border: 0, background: 'none', color: 'var(--tn-blue-ink)', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 32 }}>
               <Icon name="refresh" size={13} color="var(--tn-blue-ink)" /> {refreshing ? 'thinking…' : 'refresh'}
