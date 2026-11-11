@@ -1,0 +1,86 @@
+/* AI card v2 — flip card, holo shimmer, constellation motion, layout grids */
+
+.hero { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 48px; align-items: center; }
+.rowWide { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.rowHalf { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.cardCol { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+
+@media (max-width: 1060px) {
+  .hero, .rowWide, .rowHalf { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- flip card ---------- */
+.flip { width: 360px; max-width: 100%; height: 540px; perspective: 1400px; cursor: pointer; background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; }
+.flip:focus-visible { outline: 3px solid var(--tn-blue); outline-offset: 8px; border-radius: 30px; }
+.inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .8s cubic-bezier(.3, 1.3, .5, 1); transform: rotate(-3deg); }
+.flipped .inner { transform: rotate(0) rotateY(180deg); }
+@media (hover: hover) {
+  .flip:hover .inner { transform: rotate(0) rotateY(180deg); }
+  .flipped:hover .inner { transform: rotate(-3deg); }
+}
+
+.face {
+  position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  color: #fff; background-color: var(--tn-navy);
+  background-image: linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px);
+  background-size: 20px 20px;
+  border: 3px solid var(--tn-navy); border-radius: 28px; box-shadow: 8px 8px 0 var(--tn-blue);
+  padding: 22px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; overflow: hidden;
+}
+.back { transform: rotateY(180deg); }
+.holo {
+  position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
+  background: linear-gradient(115deg, transparent 30%, rgba(79,209,255,.28) 42%, rgba(255,228,92,.28) 50%, rgba(255,159,181,.28) 58%, transparent 70%);
+  background-size: 250% 250%; animation: holo 5s ease-in-out infinite;
+}
+@keyframes holo { 0%, 100% { background-position: 100% 0; } 50% { background-position: 0 100%; } }
+
+.rarity { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--tn-navy); padding: 2px 8px; border-radius: 6px; border: 2px solid #fff; text-transform: uppercase; }
+.common { background: #dce9ff; }
+.rare { background: linear-gradient(90deg, #4fd1ff, #bfe9ff); }
+.epic { background: linear-gradient(90deg, #b9a4ff, #ff9fb5); }
+.legendary { background: linear-gradient(90deg, #4fd1ff, #ffe45c, #ff9fb5); }
+
+.avatarBox { position: relative; height: 196px; border-radius: 20px; background: radial-gradient(circle at 50% 40%, #5b8cff, var(--tn-blue) 70%); border: 2.5px solid #fff; display: flex; align-items: center; justify-content: center; flex: none; }
+.statGrid { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); border: 2px solid rgba(255,255,255,.35); border-radius: 14px; overflow: hidden; margin-top: auto; }
+.statGrid > div { padding: 8px 10px; display: flex; flex-direction: column; }
+.statGrid > div + div { border-left: 2px solid rgba(255,255,255,.25); }
+
+/* ---------- avatar motion ---------- */
+.spin { transform-origin: 75px 14px; animation: spin 6s linear infinite; }
+.bob { animation: bob 3s ease-in-out infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes bob { 50% { transform: translateY(-4px); } }
+
+/* ---------- constellation ---------- */
+.pulse { transform-box: fill-box; transform-origin: center; animation: pulse 1.8s ease-out infinite; }
+@keyframes pulse { 0% { transform: scale(.6); opacity: 1; } 100% { transform: scale(1.7); opacity: 0; } }
+.twinkle { animation: twinkle 3s ease-in-out infinite; }
+@keyframes twinkle { 50% { opacity: .55; } }
+.star a:focus-visible circle { stroke: #fff; stroke-width: 3; }
+
+/* ---------- evidence ---------- */
+.ev { background: var(--tn-yellow); color: var(--tn-navy); border: 2px solid var(--tn-navy); border-radius: 6px; padding: 0 5px; font-weight: 700; font-family: var(--font-mono); font-size: .8em; white-space: nowrap; }
+
+/* ---------- forecast ---------- */
+.track { position: relative; height: 46px; }
+.trackLine { position: absolute; left: 0; right: 0; top: 20px; height: 6px; background: #dce6fa; border-radius: 3px; }
+.trackPath { position: absolute; top: 20px; height: 6px; background: repeating-linear-gradient(90deg, var(--tn-blue) 0 10px, transparent 10px 16px); border-radius: 3px; }
+.node { position: absolute; top: 8px; transform: translateX(-50%); width: 30px; height: 30px; border-radius: 50%; border: 2.5px solid var(--tn-navy); background: #fff; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; }
+
+/* ---------- badges ---------- */
+.sticker { background: var(--tn-yellow); border: 2.5px solid var(--tn-navy); border-radius: 16px; box-shadow: 3px 3px 0 var(--tn-navy); padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.lockedBadge { border: 2.5px dashed #9fb4d8; border-radius: 16px; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; color: var(--tn-muted); }
+
+/* ---------- toggles ---------- */
+.toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 14px; min-height: 40px; width: 100%; background: none; border: 0; padding: 0; color: var(--tn-navy); cursor: pointer; font-family: var(--font-body); text-align: left; }
+.switch { width: 44px; height: 24px; border-radius: 12px; border: 2px solid var(--tn-navy); background: #e8f0ff; position: relative; flex: none; transition: background .2s; }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--tn-navy); transition: left .2s, background .2s; }
+.on .switch { background: var(--tn-blue); }
+.on .switch::after { left: 22px; background: #fff; }
+.toggle:focus-visible .switch { outline: 3px solid var(--tn-cyan); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .holo, .spin, .bob, .pulse, .twinkle { animation: none; }
+  .inner { transition: none; }
+}

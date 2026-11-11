@@ -1,9 +1,17 @@
-import MentorPanel from '@/components/mentor/mentorPanel';
+'use client';
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import MentorApp from '@/components/mentor/MentorApp';
 
-export default function Mentorpage() {
+function Inner() {
+  const tab = useSearchParams().get('tab');
+  return <MentorApp tab={['missions', 'review'].includes(tab) ? tab : 'overview'} />;
+}
+
+export default function MentorPage() {
   return (
-    <div>
-      <MentorPanel />
-    </div>
+    <Suspense fallback={null}>
+      <Inner />
+    </Suspense>
   );
 }

@@ -4,6 +4,8 @@ const ResourceSchema = new mongoose.Schema({
   title: { type: String, required: true },
   type: { type: String, enum: ['video', 'quiz', 'project'], required: true },
   url: { type: String },
+  description: { type: String },
+  tags: [{ type: String, trim: true, lowercase: true }],
   deadline: { type: Date, default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
   maxScore: { type: Number, default: 300 },
   program: { 
@@ -15,7 +17,8 @@ const ResourceSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Quiz'
   },
-  isLocked: { type: Boolean, default: false }
+  isLocked: { type: Boolean, default: false },
+  addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Mentor' }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Resource', ResourceSchema);

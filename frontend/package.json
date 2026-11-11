@@ -18,6 +18,7 @@
     "fontawesome": "^5.6.3",
     "gasp": "^0.0.2",
     "gsap": "^3.12.7",
+    "html-to-image": "^1.11.13",
     "jwt-decode": "^4.0.0",
     "lottie-react": "^2.4.1",
     "next": "15.3.0",

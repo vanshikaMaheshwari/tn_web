@@ -1,122 +1,164 @@
-const BASE_URL = 'https://tn-backend-1.onrender.com'; // Replace with your actual backend URL
+// Single API client for TechNeeds 2.0.
+// Base URL comes from NEXT_PUBLIC_API_URL (defaults to the local backend on :8000).
+export const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
-export async function createProgram(name) {
-  const res = await fetch(`${BASE_URL}/api/programs`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
-  return res.json();
-}
+const TOKEN_KEY = 'tn_token';
+const ROLE_KEY = 'tn_role';
+const NAME_KEY = 'tn_name';
 
-export async function createMentor(data) {
-  const res = await fetch(`${BASE_URL}/api/mentors`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  return res.json();
-}
-
-export async function addMentorToProgram(programId, mentorId) {
-  const res = await fetch(`${BASE_URL}/api/programs/${programId}/add-mentor`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mentorId }),
-  });
-  return res.json();
-}
-
-export async function getAllPrograms() {
-    const res = await fetch(`${BASE_URL}/api/programs`);
-    return res.json();
-}
-  
-export async function getAllMentors() {
-    const res = await fetch(`${BASE_URL}/api/mentors`);
-    return res.json();
-}
-  
-export async function mentorLogin(email, password) {
-  console.log(email,password);
-    const res = await fetch(`${BASE_URL}/api/mentors/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-  
-    if (!res.ok) throw new Error('Login failed');
-    return res.json(); // returns { token }
-}
-  
-export async function addMentee(token, { email, name, enrollmentNumber, programId }) {
-    const res = await fetch(`${BASE_URL}/api/mentees`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-         'x-auth-token': token
-      },
-      body: JSON.stringify({ email, name, enrollmentNumber, programId }),
-    });
-  
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to add mentee');
+// ---------- session ----------
+export const session = {
+  get() {
+    if (typeof window === 'undefined') return { token: null, role: null, name: null };
+    try {
+      return {
+        token: localStorage.getItem(TOKEN_KEY),
+        role: localStorage.getItem(ROLE_KEY),
+        name: localStorage.getItem(NAME_KEY),
+      };
+    } catch {
+      return { token: null, role: null, name: null };
     }
-    return res.json(); // returns { mentee, tempPassword }
+  },
+  set({ token, role, name }) {
+    try {
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(ROLE_KEY, role);
+      if (name) localStorage.setItem(NAME_KEY, name);
+      // legacy keys used by the original panels
+      if (role === 'mentee') localStorage.setItem('menteeToken', token);
+      if (role === 'mentor') localStorage.setItem('token', token);
+    } catch { /* storage unavailable */ }
+  },
+  clear() {
+    try {
+      [TOKEN_KEY, ROLE_KEY, NAME_KEY, 'menteeToken', 'token'].forEach((k) => localStorage.removeItem(k));
+    } catch { /* ignore */ }
+  },
+};
+
+export class ApiError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
 }
 
-export async function addResource(token, resourceData, isQuiz = false) {
-  const endpoint = isQuiz ? '/api/resources/quiz' : '/api/resources';
-
-  const res = await fetch(`${BASE_URL}${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-auth-token': token,
-    },
-    body: JSON.stringify(resourceData),
-  });
-
+async function request(path, { method = 'GET', body, auth = true } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (auth) {
+    const { token } = session.get();
+    if (token) headers['x-auth-token'] = token;
+  }
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError('Cannot reach the server. Is the backend running?', 0);
+  }
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || 'Failed to add resource');
+    if (res.status === 401 && auth) session.clear();
+    throw new ApiError(data.error || data.message || `Request failed (${res.status})`, res.status);
   }
-
-  return res.json(); // returns resource or quiz object
+  return data;
 }
 
-  
-export async function getMentorDetails(token) {
-    const res = await fetch(`${BASE_URL}/api/mentors/me`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-  
-    if (!res.ok) throw new Error('Failed to fetch mentor details');
-    return res.json(); // returns mentor object
+// ---------- auth ----------
+export async function login(role, { id, password }) {
+  if (role === 'mentee') {
+    const d = await request('/api/m/login', { method: 'POST', auth: false, body: { enrollmentNumber: id, password } });
+    session.set({ token: d.token, role, name: d.name });
+    return d;
   }
-
-
-  export async function getProgramMentees(programId, token) {
-    const res = await fetch(`${BASE_URL}/api/${programId}/mentees`, {
-      headers: {
-      'x-auth-token': token
-      }
-    });
-    if (!res.ok) throw new Error('Failed to fetch mentees');
-    return res.json();
+  if (role === 'mentor') {
+    const d = await request('/api/mentors/login', { method: 'POST', auth: false, body: { email: id, password } });
+    session.set({ token: d.token, role, name: d.mentor?.name });
+    return d;
   }
+  const d = await request('/api/admin/login', { method: 'POST', auth: false, body: { email: id, password } });
+  session.set({ token: d.token, role: 'admin', name: 'Admin' });
+  return d;
+}
+export const logout = () => session.clear();
 
-  export async function getProgramResources(programId, token) {
-    const res = await fetch(`${BASE_URL}/api/${programId}/resources`, {
-      headers: {
-        'x-auth-token': token
-      }
-    });
-    if (!res.ok) throw new Error('Failed to fetch resources');
-    return res.json();
-  }
-  
+// ---------- public ----------
+export const getLeaderboard = (programId) =>
+  request(`/api/m/leaderboard${programId ? `?program=${programId}` : ''}`, { auth: false });
+export const getPublicPrograms = () => request('/api/m/programs/public', { auth: false });
+
+// ---------- mentee ----------
+export const getDashboard = () => request('/api/m/dashboard');
+export const completeVideo = (id) => request(`/api/m/resources/${id}/complete`, { method: 'POST' });
+export const getQuiz = (id) => request(`/api/m/resources/${id}/quiz`);
+export const submitQuiz = (id, answers) => request(`/api/m/resources/${id}/quiz/submit`, { method: 'POST', body: { answers } });
+export const submitProject = (id, body) => request(`/api/m/resources/${id}/project`, { method: 'POST', body });
+export const getProfile = () => request('/api/m/profile');
+export const generateAiProfile = (force = false) => request('/api/m/profile/ai', { method: 'POST', body: { force } });
+export const updateInterests = (interests) => request('/api/m/interests', { method: 'PUT', body: { interests } });
+export const getCard = () => request('/api/m/card');
+export const refreshCard = () => request('/api/m/card/ai', { method: 'POST' });
+export const updatePrivacy = (body) => request('/api/m/privacy', { method: 'PUT', body });
+export const getPublicCard = (enrollment) => request(`/api/m/u/${encodeURIComponent(enrollment)}`, { auth: false });
+export const changePassword = (currentPassword, newPassword) =>
+  request('/api/m/change-password', { method: 'POST', body: { currentPassword, newPassword } });
+
+// ---------- mentor ----------
+export const getMentorMe = () => request('/api/mentors/me');
+export const getMyPrograms = () => request('/api/programs');
+export const getProgramMentees = (programId) => request(`/api/${programId}/mentees`);
+export const getProgramResources = (programId) => request(`/api/${programId}/resources`);
+export const addMentee = (body) => request('/api/mentees', { method: 'POST', body });
+export const resetMenteePassword = (menteeId) => request(`/api/mentees/${menteeId}/reset-password`, { method: 'POST' });
+export const createResource = (body) => request('/api/resources', { method: 'POST', body });
+export const createQuiz = (body) => request('/api/resources/quiz', { method: 'POST', body });
+export const deleteResource = (id) => request(`/api/resources/${id}`, { method: 'DELETE' });
+export const getMenteeCard = (menteeId) => request(`/api/mentees/${menteeId}/card`);
+export const endorseMentee = (menteeId, text) => request(`/api/mentees/${menteeId}/endorse`, { method: 'PUT', body: { text } });
+export const getUnverifiedProjects = () => request('/api/unverified-projects');
+export const verifyProject = (menteeId, resourceId, score, feedback) =>
+  request(`/api/${menteeId}/resources/${resourceId}/verify`, { method: 'PATCH', body: { score, feedback } });
+
+// ---------- admin ----------
+export const getAdminStats = () => request('/api/admin/stats');
+export const getAllPrograms = () => request('/api/programs');
+export const createProgram = (name, description) => request('/api/programs', { method: 'POST', body: { name, description } });
+export const getAllMentors = () => request('/api/mentors');
+export const createMentor = (name, email) => request('/api/mentors', { method: 'POST', body: { name, email } });
+export const assignMentor = (programId, mentorId) =>
+  request(`/api/programs/${programId}/add-mentor`, { method: 'POST', body: { mentorId } });
+export const removeMentor = (programId, mentorId) =>
+  request(`/api/programs/${programId}/remove-mentor`, { method: 'POST', body: { mentorId } });
+
+// ---------- helpers ----------
+export function timeLeft(date) {
+  if (!date) return null;
+  const ms = new Date(date).getTime() - Date.now();
+  const abs = Math.abs(ms);
+  const d = Math.floor(abs / 86400000);
+  const h = Math.floor((abs % 86400000) / 3600000);
+  const m = Math.floor((abs % 3600000) / 60000);
+  const txt = d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+  return { ms, txt, past: ms < 0 };
+}
+
+export function initials(name = '') {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || 'TN';
+}
+
+export function formatDate(date) {
+  if (!date) return '';
+  return new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+export function formatDateTime(date) {
+  if (!date) return '';
+  return new Date(date).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
+export const avatarUrl = (seed) =>
+  `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed || 'techneeds')}&backgroundColor=2f6bff,4fd1ff,ffe45c`;

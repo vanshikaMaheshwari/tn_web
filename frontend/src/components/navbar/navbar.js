@@ -1,158 +1,70 @@
 'use client';
-
-import Image from 'next/image';
-import { useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import '@fortawesome/fontawesome-free/css/all.min.css';
-import './navbar.css';
-import logo from '../../assets/logo.png';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { Logo } from '../ui/Brand';
+import Icon from '../ui/Icon';
+import { session, logout, initials } from '@/lib/api';
 
-const Navbar = () => {
-  const navRef = useRef(null);
+const PUBLIC_LINKS = [
+  ['/', 'Home'],
+  ['/techboard', 'Techboard'],
+  ['/team', 'Team'],
+  ['/leaderboard', 'Leaderboard'],
+  ['/faq', 'FAQs'],
+];
+const MENTEE_LINKS = [
+  ['/dashboard', 'Launchpad'],
+  ['/profile', 'My AI card'],
+  ['/leaderboard', 'Leaderboard'],
+];
+
+// Mentor and admin areas render their own chrome; the login page is full-bleed.
+const HIDDEN = ['/mentor', '/admin', '/login'];
+
+export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [s, setS] = useState({ token: null, role: null, name: null });
 
-  const animateSelector = () => {
-    const nav = navRef.current;
-    const activeItem = nav.querySelector('li.active');
-    const selector = nav.querySelector('.hori-selector');
+  useEffect(() => { setS(session.get()); }, [pathname]);
 
-    if (activeItem && selector) {
-      const { offsetTop, offsetLeft, offsetHeight, offsetWidth } = activeItem;
-      selector.style.top = `${offsetTop}px`;
-      selector.style.left = `${offsetLeft}px`;
-      selector.style.height = `${offsetHeight}px`;
-      selector.style.width = `${offsetWidth}px`;
-    }
-  };
+  if (HIDDEN.some((p) => pathname === p || pathname.startsWith(p + '/'))) return null;
+  if (pathname.startsWith('/dashboard/quiz')) return null; // focused quiz mode
 
-  useEffect(() => {
-    const nav = navRef.current;
-    const items = nav.querySelectorAll('li');
-
-    // Remove old active classes
-    items.forEach((li) => li.classList.remove('active'));
-
-    // Add active class to current route
-    items.forEach((li) => {
-      const link = li.querySelector('a');
-      if (link && link.getAttribute('href') === pathname) {
-        li.classList.add('active');
-      }
-    });
-
-    animateSelector();
-
-    // Animate on resize
-    const handleResize = () => setTimeout(animateSelector, 500);
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [pathname]);
+  const isMentee = s.role === 'mentee' && s.token;
+  const links = isMentee ? MENTEE_LINKS : PUBLIC_LINKS;
+  const home = isMentee ? '/dashboard' : '/';
+  const dash = s.role === 'mentor' ? '/mentor' : s.role === 'admin' ? '/admin' : '/dashboard';
 
   return (
-    <nav className="navbar navbar-expand-custom navbar-mainbg">
-      <div className="logo">
-        <Image src={logo} alt="Logo" width={80} height={80} />
-      </div>
-
-      <button
-        className="navbar-toggler"
-        type="button"
-        onClick={() => {
-          const collapse = document.getElementById('navbarSupportedContent');
-          collapse.style.display = collapse.style.display === 'block' ? 'none' : 'block';
-          setTimeout(animateSelector, 300);
-        }}
-        aria-controls="navbarSupportedContent"
-        aria-expanded="false"
-        aria-label="Toggle navigation"
-      >
-        <i className="fas fa-bars text-white"></i>
-      </button>
-
-      <div className="collapse navbar-collapse" id="navbarSupportedContent" ref={navRef}>
-        <ul className="navbar-nav ml-auto">
-          <div className="hori-selector">
-            <div className="left"></div>
-            <div className="right"></div>
-          </div>
-
-          <li className={`nav-item ${pathname === '/home' ? 'active' : ''}`}>
-            <Link className="nav-link" href="/" onClick={() => {
-    const collapse = document.getElementById('navbarSupportedContent');
-    if (window.innerWidth <= 768) collapse.style.display = 'none';
-  }}
-> 
-              <i className="fas fa-home"></i> Home
+    <header className="tn-header">
+      <Logo href={home} />
+      <nav className="tn-nav" aria-label="Primary">
+        {links.map(([href, label]) => {
+          const active = href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
+          return (
+            <Link key={href} href={href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>
+              {label}
             </Link>
-          </li>
-
-          <li className={`nav-item ${pathname === '/techboard' ? 'active' : ''}`}>
-            <Link className="nav-link" href="/techboard" onClick={() => {
-    const collapse = document.getElementById('navbarSupportedContent');
-    if (window.innerWidth <= 768) collapse.style.display = 'none';
-  }}
->
-              <i className="fas fa-microchip"></i> Techboard
-            </Link>
-          </li>
-
-          <li className={`nav-item ${pathname === '/team' ? 'active' : ''}`}>
-            <Link className="nav-link" href="/team" onClick={() => {
-    const collapse = document.getElementById('navbarSupportedContent');
-    if (window.innerWidth <= 768) collapse.style.display = 'none';
-  }}
->
-              <i className="fas fa-users"></i> Team
-            </Link>
-          </li>
-
-          {/* <li className="nav-item">
-            <Link className="nav-link" href="/eventspage" onClick={() => {
-    const collapse = document.getElementById('navbarSupportedContent');
-    if (window.innerWidth <= 768) collapse.style.display = 'none';
-  }}
->
-              <i className="fas fa-calendar-check"></i> Events
-            </Link>
-          </li> */}
-
-          <li className="nav-item">
-            <Link className="nav-link" href="/leaderboard" onClick={() => {
-    const collapse = document.getElementById('navbarSupportedContent');
-    if (window.innerWidth <= 768) collapse.style.display = 'none';
-  }}
->
-              <i className="fa-solid fa-ranking-star"></i> Leaderboard
-            </Link>
-          </li>
-
-          <li className={`nav-item ${pathname === '/faq' ? 'active' : ''}`}>
-            <Link className="nav-link" href="/faq" onClick={() => {
-    const collapse = document.getElementById('navbarSupportedContent');
-    if (window.innerWidth <= 768) collapse.style.display = 'none';
-  }}
->
-              <i className="fas fa-question-circle"></i> FAQs
-            </Link>
-          </li>
-
-          <li className="nav-item">
-            <Link className="nav-link" href="/profile" onClick={() => {
-    const collapse = document.getElementById('navbarSupportedContent');
-    if (window.innerWidth <= 768) collapse.style.display = 'none';
-  }}
->
-              <i className="fas fa-user-circle"></i> Profile
-            </Link>
-          </li>
-        </ul>
-      </div>
-    </nav>
+          );
+        })}
+      </nav>
+      {s.token ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {!isMentee && <Link href={dash} className="tn-btn sm primary">My dashboard</Link>}
+          <span className="tn-avatar" title={s.name || ''}>{initials(s.name || '')}</span>
+          <button
+            className="tn-btn sm"
+            onClick={() => { logout(); router.push('/'); }}
+            aria-label="Log out"
+          >
+            <Icon name="logout" size={18} />
+          </button>
+        </div>
+      ) : (
+        <Link href="/login" className="tn-btn primary">Log in</Link>
+      )}
+    </header>
   );
-};
-
-export default Navbar;
+}
