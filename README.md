@@ -3,7 +3,7 @@
 > **Innovortex 4.0 · Reimagathon · Team Paradox** (Vanshika Maheshwari, Unnati Gautam)
 > A full reimagining of the TechNeeds IGDTUW mentorship platform: `all_you_need_to_know_about_tech`.
 
-**Live demo:** `https://tn-web-eight.vercel.app` · **API:** `(https://tn-web-8ynw.onrender.com · )` · **Demo video:** `(https://drive.google.com/drive/folders/1ol9zAUihc1z5DvUpBgU6YnwGxKXdWBBG?usp=drive_link)`
+**Live demo:** [tn-web-eight.vercel.app](https://tn-web-eight.vercel.app) · **API:** [tn-web-8ynw.onrender.com](https://tn-web-8ynw.onrender.com) · **Demo video:** [Google Drive](https://drive.google.com/drive/folders/1ol9zAUihc1z5DvUpBgU6YnwGxKXdWBBG?usp=drive_link) · **Public AI card:** [/u/TN-WEBD-0004](https://tn-web-eight.vercel.app/u/TN-WEBD-0004)
 
 ---
 
