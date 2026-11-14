@@ -2,12 +2,15 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/lib/useAuth';
-import { completeVideo, formatDate, getDashboard, getLeaderboard, getReminders, sendFeedback, timeLeft } from '@/lib/api';
+import { completeVideo, formatDate, getDashboard, getLeaderboard, getMySessions, getReminders, sendFeedback, timeLeft } from '@/lib/api';
 import { ErrorBox, Loading } from '@/components/ui/Brand';
 import Icon from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/Toast';
 import Tour from '@/components/onboarding/Tour';
 import InfoTip from '@/components/onboarding/InfoTip';
+import VideoModal from '@/components/classes/VideoModal';
+import VideoThumb from '@/components/classes/VideoThumb';
+import { fmtDay, fmtTime } from '@/components/classes/media';
 
 const TYPE = {
   video: { icon: 'play', bg: 'var(--tn-yellow)', color: 'var(--tn-navy)', label: 'Video', how: 'watch, then tap “Mark as done”' },
@@ -36,6 +39,9 @@ export default function Launchpad() {
   const [tour, setTour] = useState(false);
   const [openMods, setOpenMods] = useState({});
   const [reminders, setReminders] = useState(null);
+  const [classes, setClasses] = useState(null);
+  const [video, setVideo] = useState(null);
+  const closeVideo = useCallback(() => setVideo(null), []);
 
   const load = useCallback(async () => {
     setError('');
@@ -44,6 +50,7 @@ export default function Launchpad() {
       setData(d);
       getLeaderboard(d.programs?.[0]?._id).then(setBoard).catch(() => setBoard([]));
       getReminders().then(setReminders).catch(() => setReminders(null));
+      getMySessions().then(setClasses).catch(() => setClasses(null));
     } catch (e) { setError(e.message); }
   }, []);
 
@@ -168,7 +175,7 @@ export default function Launchpad() {
                     {open && (
                       <ol style={{ listStyle: 'none', margin: 0, padding: '20px 22px 4px' }}>
                         {m.subtopics.map((st, si) => (
-                          <Subtopic key={st._id} num={`${mi + 1}.${si + 1}`} st={st} resources={st.resourceIds.map((id) => view.byId.get(id)).filter(Boolean)} onVideo={onVideo} busyId={busyId} nextId={view.next?._id} toast={toast} />
+                          <Subtopic key={st._id} num={`${mi + 1}.${si + 1}`} st={st} resources={st.resourceIds.map((id) => view.byId.get(id)).filter(Boolean)} onVideo={onVideo} busyId={busyId} nextId={view.next?._id} toast={toast} onPlay={setVideo} recordings={(classes?.recordings || []).filter((r) => String(r.subtopic || '') === String(st._id))} />
                         ))}
                         {m.looseResourceIds?.length > 0 && (
                           <li className="tn-stack" style={{ gap: 10, paddingBottom: 18 }}>
@@ -192,6 +199,17 @@ export default function Launchpad() {
         </div>
 
         <aside className="tn-stack" style={{ gap: 20 }}>
+          {classes?.next && (
+            <div className="tn-card" style={{ background: 'var(--tn-sky)', display: 'flex', flexDirection: 'column', gap: 8 }} aria-label="Next live class">
+              <div className="tn-between" style={{ gap: 8 }}>
+                <span className="tn-mono" style={{ fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>{classes.next.status === 'live' ? <><span className="tn-live-dot" /> live_now</> : 'next_live_class'}</span>
+                <Link href="/classes" style={{ fontSize: 13, fontWeight: 700 }}>Calendar</Link>
+              </div>
+              <b style={{ fontSize: 18 }}>{classes.next.title}</b>
+              <span style={{ fontSize: 14 }}>{fmtDay(classes.next.startsAt)} · {fmtTime(classes.next.startsAt)}{classes.next.status === 'upcoming' && timeLeft(classes.next.startsAt) ? ` · in ${timeLeft(classes.next.startsAt).txt}` : ''}</span>
+              {classes.next.meetUrl && <a className="tn-btn sm primary" style={{ alignSelf: 'flex-start' }} href={classes.next.meetUrl} target="_blank" rel="noopener noreferrer"><Icon name="video" size={16} color="#fff" /> Join Google Meet</a>}
+            </div>
+          )}
           {reminders?.items?.length > 0 && (
             <div className="tn-card" style={{ background: 'var(--tn-orange-bg)', display: 'flex', flexDirection: 'column', gap: 10 }} aria-label="Today's reminders">
               <div className="tn-between" style={{ gap: 8 }}>
@@ -245,6 +263,7 @@ export default function Launchpad() {
       </section>
 
       <Tour steps={TOUR} open={tour} onClose={closeTour} />
+      <VideoModal video={video} onClose={closeVideo} />
     </main>
   );
 }
@@ -259,7 +278,8 @@ function Stat({ label, value, explain, tip, bg = '#fff' }) {
   );
 }
 
-function Subtopic({ num, st, resources, onVideo, busyId, nextId, toast }) {
+function Subtopic({ num, st, resources, onVideo, busyId, nextId, toast, onPlay, recordings = [] }) {
+  const [showRefs, setShowRefs] = useState(false);
   const mark = st.state === 'done'
     ? <span className="tn-stmark" style={{ background: 'var(--tn-blue)' }}><Icon name="check" size={16} color="#fff" stroke={3} /></span>
     : st.state === 'current'
@@ -281,6 +301,21 @@ function Subtopic({ num, st, resources, onVideo, busyId, nextId, toast }) {
         {expanded
           ? resources.map((r) => <MissionRow key={r._id} r={r} onVideo={onVideo} busy={busyId === r._id} urgent={nextId === r._id} toast={toast} />)
           : <span className="tn-muted" style={{ fontSize: 13 }}>{st.total} mission{st.total === 1 ? '' : 's'}{st.state === 'done' ? ` · ${resources.reduce((s, r) => s + (r.score || 0), 0)} pts earned` : ''}</span>}
+        {(st.references?.length > 0 || recordings.length > 0) && (expanded || showRefs ? (
+          <div className="tn-stack" style={{ gap: 8, background: 'var(--tn-paper)', border: '2px dashed #9fb4d8', borderRadius: 14, padding: '12px 12px 4px' }}>
+            <div className="tn-between" style={{ gap: 8 }}>
+              <span className="tn-mono" style={{ fontSize: 12, fontWeight: 700 }}>📺 learn_more · {[st.references?.length ? `${st.references.length} reference video${st.references.length === 1 ? '' : 's'}` : '', recordings.length ? `${recordings.length} class recording${recordings.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</span>
+              {!expanded && <button className="tn-mini" style={{ padding: '0 8px' }} onClick={() => setShowRefs(false)}>hide</button>}
+            </div>
+            <span className="tn-muted" style={{ fontSize: 12 }}>Hand-picked by your mentors. Optional, no points: watch them if a mission feels hard.</span>
+            <div className="tn-refstrip">
+              {recordings.map((r) => <VideoThumb key={r._id} tag="CLASS" width={200} video={{ title: r.title, url: r.recording.url, channel: `Recorded class · ${fmtDay(r.startsAt)}`, notes: r.recordingNotes }} onPlay={onPlay} />)}
+              {(st.references || []).map((v) => <VideoThumb key={v._id} width={200} video={v} onPlay={onPlay} />)}
+            </div>
+          </div>
+        ) : (
+          <button className="tn-mini" style={{ alignSelf: 'flex-start', padding: '2px 10px' }} onClick={() => setShowRefs(true)}>📺 {(st.references?.length || 0) + recordings.length} videos to learn more</button>
+        ))}
       </div>
     </li>
   );

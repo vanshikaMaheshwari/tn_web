@@ -223,6 +223,7 @@ async function attachModules(programs) {
         return {
           _id: st._id, title: st.title, description: st.description || '', state,
           lockUntilPrevious: !!st.lockUntilPrevious,
+          references: (st.references || []).map((x) => ({ _id: x._id, title: x.title, url: x.url, channel: x.channel || '', minutes: x.minutes || null })),
           resourceIds: res.map((r) => String(r._id)),
           done: res.filter(finished).length, total: res.length,
         };

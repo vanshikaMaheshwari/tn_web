@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import AiCard from '@/components/card/AiCard';
 import ModulesEditor from '@/components/mentor/ModulesEditor';
+import ClassesManager from '@/components/mentor/ClassesManager';
 import CommandDeck from '@/components/core/CommandDeck';
 import EventsManager from '@/components/core/EventsManager';
 import Inbox from '@/components/core/Inbox';
@@ -26,6 +27,7 @@ const TABS = [
   ['crew', 'Crew (mentees)', '/mentor/crew'],
   ['missions', 'Missions (resources)', '/mentor?tab=missions'],
   ['modules', 'Modules', '/mentor?tab=modules'],
+  ['classes', 'Classes', '/mentor?tab=classes'],
   ['review', 'Review queue', '/mentor?tab=review'],
 ];
 const CORE_TABS = [
@@ -209,6 +211,7 @@ export default function MentorApp({ tab, menteeId }) {
               </>
             )}
             {tab === 'modules' && <ModulesEditor program={program} onChange={loadProgram} />}
+            {tab === 'classes' && <ClassesManager key={pid} program={program} />}
             {tab === 'review' && (
               <>
                 <div className="tn-stack" style={{ gap: 6 }}>

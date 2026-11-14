@@ -8,7 +8,7 @@ const SHOW_ON = ['/', '/techboard', '/team', '/faq', '/events', '/leaderboard'];
 export default function Footer() {
   const pathname = usePathname();
   const onPublic = SHOW_ON.includes(pathname);
-  const onApp = ['/dashboard', '/profile'].includes(pathname);
+  const onApp = ['/dashboard', '/profile', '/classes'].includes(pathname);
   if (!onPublic) return onApp ? <FeedbackTab /> : null;
   return (
     <>

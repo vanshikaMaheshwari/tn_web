@@ -1,11 +1,14 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import {
-  addSubtopic, createModule, deleteModule, deleteSubtopic, getModules, placeResource, reorderModules, updateModule, updateSubtopic,
+  addReference, deleteReference, addSubtopic, createModule, deleteModule, deleteSubtopic, getModules, placeResource, reorderModules, updateModule, updateSubtopic,
 } from '@/lib/api';
 import { ErrorBox, Loading } from '@/components/ui/Brand';
 import Icon from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/Toast';
+import VideoThumb from '@/components/classes/VideoThumb';
+import VideoModal from '@/components/classes/VideoModal';
+import { youtubeId } from '@/components/classes/media';
 
 const TYPE_ICON = { video: 'play', quiz: 'quiz', project: 'code' };
 const TYPE_BG = { video: 'var(--tn-yellow)', quiz: 'var(--tn-sky)', project: '#C9F5DF' };
@@ -172,6 +175,7 @@ function SubRow({ m, s, num, first, last, run, targets, move }) {
       </div>
       {s.resources.length === 0 && <span className="tn-muted" style={{ fontSize: 13 }}>No missions yet. Place one from “Not in a module”, or pick this sub-topic when building a mission.</span>}
       {s.resources.map((r) => <PlaceRow key={r._id} r={r} value={placeKey(m._id, s._id)} targets={targets} move={move} />)}
+      <References m={m} s={s} run={run} />
     </li>
   );
 }
@@ -184,6 +188,53 @@ function PlaceRow({ r, value, targets, move }) {
       <select className="tn-select" style={{ minHeight: 34, width: 'auto', maxWidth: 240, fontSize: 13 }} aria-label={`Move ${r.title} to`} value={value} onChange={(e) => move(r, e.target.value)}>
         {targets.map(([k, l]) => <option key={k || 'none'} value={k}>{l}</option>)}
       </select>
+    </div>
+  );
+}
+
+// Reference videos for one sub-topic: list with thumbnails + an add form.
+function References({ m, s, run }) {
+  const refs = s.references || [];
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState({ url: '', title: '', channel: '', minutes: '' });
+  const [video, setVideo] = useState(null);
+  const yt = youtubeId(f.url);
+  const add = (e) => {
+    e.preventDefault();
+    run(() => addReference(m._id, s._id, { ...f, minutes: f.minutes ? Number(f.minutes) : undefined }), 'Reference video added');
+    setF({ url: '', title: '', channel: '', minutes: '' });
+  };
+  return (
+    <div className="tn-stack" style={{ gap: 8, borderTop: '1px dashed #9fb4d8', paddingTop: 8 }}>
+      <div className="tn-between" style={{ gap: 8 }}>
+        <span className="tn-mono" style={{ fontSize: 12, fontWeight: 700 }}>📺 reference videos ({refs.length})</span>
+        <button type="button" className="tn-btn sm" onClick={() => setOpen(!open)}>{open ? 'Done' : refs.length ? 'Manage' : '+ Add videos'}</button>
+      </div>
+      {refs.length > 0 && (
+        <div className="tn-refstrip">
+          {refs.map((v) => (
+            <div key={v._id} className="tn-stack" style={{ gap: 4 }}>
+              <VideoThumb width={170} video={v} onPlay={setVideo} />
+              {open && <button type="button" className="tn-mini" style={{ alignSelf: 'flex-start', padding: '0 8px' }} onClick={() => run(() => deleteReference(m._id, s._id, v._id), 'Removed')}>Remove</button>}
+            </div>
+          ))}
+        </div>
+      )}
+      {open && (
+        <form onSubmit={add} className="tn-stack" style={{ gap: 8 }}>
+          <input className="tn-input mono" style={{ minHeight: 38 }} required aria-label="Video link" placeholder="https://www.youtube.com/watch?v=… (or a Drive link)" value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} />
+          {f.url && <span style={{ fontSize: 12, color: yt ? 'var(--tn-green)' : 'var(--tn-muted)' }}>{yt ? '✓ YouTube video detected: mentees can watch it right on the Launchpad' : 'Not a YouTube link: it will open in a new tab'}</span>}
+          <div className="tn-form-grid">
+            <input className="tn-input" style={{ minHeight: 38 }} required aria-label="Video title" placeholder="Title, e.g. Learn Flexbox in 15 Minutes" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
+            <input className="tn-input" style={{ minHeight: 38 }} aria-label="Channel" placeholder="Channel (optional)" value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} />
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input className="tn-input" style={{ minHeight: 38, width: 130 }} type="number" min="1" max="600" aria-label="Length in minutes" placeholder="Minutes" value={f.minutes} onChange={(e) => setF({ ...f, minutes: e.target.value })} />
+            <button className="tn-btn sm primary">Add video</button>
+          </div>
+        </form>
+      )}
+      <VideoModal video={video} onClose={() => setVideo(null)} />
     </div>
   );
 }

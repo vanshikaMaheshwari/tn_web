@@ -19,6 +19,7 @@ const Setting = require('../models/Setting');
 const Reminder = require('../models/Reminder');
 const CohortReport = require('../models/CohortReport');
 const WorkflowRun = require('../models/WorkflowRun');
+const Session = require('../models/Session');
 const insights = require('../services/insights');
 
 const DAY = 86400000;
@@ -28,7 +29,7 @@ async function seed({ reset = process.argv.includes('--reset') } = {}) {
   if (mongoose.connection.readyState === 0) await mongoose.connect(process.env.MONGO_URI);
 
   if (reset) {
-    await Promise.all([Mentor, Mentee, Program, Resource, Quiz, QuizSubmission, Module, Event, Feedback, Query, Setting, Reminder, CohortReport, WorkflowRun].map((M) => M.deleteMany({})));
+    await Promise.all([Mentor, Mentee, Program, Resource, Quiz, QuizSubmission, Module, Event, Feedback, Query, Setting, Reminder, CohortReport, WorkflowRun, Session].map((M) => M.deleteMany({})));
     console.log('Collections cleared.');
   }
   if (await Program.exists({ name: 'Web Dev Cohort 2026' })) {
@@ -109,6 +110,22 @@ async function seed({ reset = process.argv.includes('--reset') } = {}) {
     ['State with Context', 'Share state without prop drilling.'],
     ['Portfolio project', 'Your own site, built with Next.js.'],
   ]);
+  // Curated reference videos (all checked to exist on YouTube). Watch-along material, no points.
+  const yt = (id, title, channel, minutes) => ({ title, url: `https://www.youtube.com/watch?v=${id}`, channel, minutes, addedBy: 'TechNeeds mentors' });
+  const REFS = [
+    [m1, 0, [yt('qz0aGYrrlhU', 'HTML Tutorial for Beginners: HTML Crash Course', 'Programming with Mosh', 60), yt('UB1O30fR-EE', 'HTML Crash Course For Absolute Beginners', 'Traversy Media', 60), yt('yfoY53QXEnI', 'CSS Crash Course For Absolute Beginners', 'Traversy Media', 85)]],
+    [m1, 1, [yt('fYq5PXgSsbE', 'Learn Flexbox in 15 Minutes', 'Web Dev Simplified', 15), yt('u044iM9xsWU', 'Learn flexbox the easy way', 'Kevin Powell'), yt('3YW65K6LcIA', 'Flexbox Crash Course', 'Traversy Media'), yt('jV8B24rSN5o', 'CSS Grid Layout Crash Course', 'Traversy Media')]],
+    [m1, 2, [yt('2KL-z9A56SQ', 'Learn how to use CSS Media Queries in less than 5 minutes', 'Kevin Powell', 5), yt('bn-DQCifeQQ', 'Responsive design made easy', 'Kevin Powell'), yt('AD-3nVI3-_U', 'How to Deploy a Static Website to GitHub Pages', '')]],
+    [m2, 0, [yt('3a0I8ICR1Vg', 'Learn Closures In 7 Minutes', 'Web Dev Simplified', 7), yt('47SPG8TvUXA', 'Learn Closures In 13 Minutes (with interview questions)', 'Web Dev Simplified', 13)]],
+    [m2, 1, [yt('RvYYCGs45L4', 'JavaScript Promise in 100 Seconds', 'Fireship', 2), yt('DHvZLI7Db8E', 'JavaScript Promises In 10 Minutes', 'Web Dev Simplified', 10), yt('vn3tm0quoqE', 'The Async Await Episode I Promised', 'Fireship')]],
+    [m2, 2, [yt('cuEtnrL9-H0', 'Learn Fetch API In 6 Minutes', 'Web Dev Simplified', 6)]],
+    [m3, 0, [yt('Tn6-PIqc4UM', 'React in 100 Seconds', 'Fireship', 2), yt('O6P86uwfdR0', 'Learn useState In 15 Minutes', 'Web Dev Simplified', 15)]],
+    [m3, 1, [yt('ngVvDegsAW8', 'State Management in React (Context API + useContext)', 'Dave Gray', 25), yt('kK_Wqx3RnHk', 'Learn useReducer In 20 Minutes', 'Web Dev Simplified', 20)]],
+    [m3, 2, [yt('Sklc_fQBmcs', 'Next.js in 100 Seconds + Full Beginner’s Tutorial', 'Fireship')]],
+  ];
+  for (const [mod, k, refs] of REFS) mod.subtopics[k].references = refs;
+  await Promise.all([m1.save(), m2.save(), m3.save()]);
+
   const place = async (res, mod, k) => { res.module = mod._id; res.subtopic = mod.subtopics[k]._id; await res.save(); };
   await place(resources[0], m1, 0); await place(resources[1], m1, 1); await place(resources[3], m1, 2);
   await place(resources[2], m2, 0); await place(futureQuiz, m2, 1); await place(weatherApp, m2, 2);
@@ -209,6 +226,18 @@ async function seed({ reset = process.argv.includes('--reset') } = {}) {
     { source: 'mission', resource: resources[4]._id, rating: 4, comment: 'Great React intro, a bit fast in the middle.' },
     { source: 'site', rating: 5, comment: 'The new Launchpad finally makes sense.', page: '/dashboard' },
   ]);
+
+  // Live classes (Google Meet) + recorded lectures. Demo Meet codes: replace with your real links.
+  const at = (days, h, m = 0) => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, m, 0, 0); return d; };
+  const S = (o) => Session.create({ program: web._id, host: mentor.name, createdBy: mentor._id, durationMin: 60, ...o });
+  await S({ title: 'Doubt clinic: closures & scope', agenda: 'Bring the closure questions you got stuck on. We’ll live-code 3 interview problems.', startsAt: at(1, 19), meetUrl: 'https://meet.google.com/tnw-clos-ure', module: m2._id, subtopic: m2.subtopics[0]._id });
+  await S({ title: 'Live build: weather app with fetch()', agenda: 'Build the weather-app mission together: fetch, loading states, errors, deploy.', startsAt: at(3, 18, 30), durationMin: 90, meetUrl: 'https://meet.google.com/tnw-fetc-hapi', module: m2._id, subtopic: m2.subtopics[2]._id });
+  await S({ title: 'React kickoff + portfolio Q&A', agenda: 'Components, props and how the Next.js portfolio project is graded.', startsAt: at(8, 19), meetUrl: 'https://meet.google.com/tnw-reac-tkof', module: m3._id, subtopic: m3.subtopics[0]._id });
+  await S({ title: 'Flexbox & Grid walkthrough', agenda: 'Layouts from scratch.', startsAt: at(-20, 19), meetUrl: 'https://meet.google.com/tnw-flex-grid', module: m1._id, subtopic: m1.subtopics[1]._id,
+    recordingUrl: 'https://www.youtube.com/watch?v=fYq5PXgSsbE', recordingNotes: 'Demo data: a public tutorial stands in for the class recording. Mentors paste their own Meet recording (Drive) or YouTube link here.' });
+  await S({ title: 'Async JavaScript explained', agenda: 'Callbacks → promises → async/await.', startsAt: at(-5, 19), meetUrl: 'https://meet.google.com/tnw-asyn-cjsx', module: m2._id, subtopic: m2.subtopics[1]._id,
+    recordingUrl: 'https://www.youtube.com/watch?v=vn3tm0quoqE', recordingNotes: 'Demo data: a public tutorial stands in for the class recording.' });
+  await S({ title: 'Orientation: how TechNeeds works', agenda: 'Missions, points, streaks and the AI card.', startsAt: at(-32, 18), meetUrl: 'https://meet.google.com/tnw-orie-ntat' });
 
   // First reminders + weekly reports, so the Launchpad and Mission control aren't empty.
   // (Same code the Render Workflow tasks run; rules summaries only, no Gemini call here.)

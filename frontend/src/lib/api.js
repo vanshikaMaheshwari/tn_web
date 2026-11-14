@@ -159,6 +159,14 @@ export const reorderModules = (programId, order) => request(`/api/programs/${pro
 export const addSubtopic = (moduleId, body) => request(`/api/modules/${moduleId}/subtopics`, { method: 'POST', body });
 export const updateSubtopic = (moduleId, subId, body) => request(`/api/modules/${moduleId}/subtopics/${subId}`, { method: 'PUT', body });
 export const deleteSubtopic = (moduleId, subId) => request(`/api/modules/${moduleId}/subtopics/${subId}`, { method: 'DELETE' });
+export const addReference = (moduleId, subId, body) => request(`/api/modules/${moduleId}/subtopics/${subId}/references`, { method: 'POST', body });
+export const deleteReference = (moduleId, subId, refId) => request(`/api/modules/${moduleId}/subtopics/${subId}/references/${refId}`, { method: 'DELETE' });
+// Live classes + recorded lectures
+export const getSessions = (programId) => request(`/api/programs/${programId}/sessions`);
+export const createSession = (programId, body) => request(`/api/programs/${programId}/sessions`, { method: 'POST', body });
+export const updateSession = (id, body) => request(`/api/sessions/${id}`, { method: 'PUT', body });
+export const deleteSession = (id) => request(`/api/sessions/${id}`, { method: 'DELETE' });
+export const getMySessions = () => request('/api/m/sessions');
 export const placeResource = (resourceId, module, subtopic) => request(`/api/resources/${resourceId}/placement`, { method: 'PUT', body: { module, subtopic } });
 export const createProgram = (name, description) => request('/api/programs', { method: 'POST', body: { name, description } });
 export const getAllMentors = () => request('/api/mentors');

@@ -49,6 +49,12 @@ Fonts: Bricolage Grotesque (display), DM Sans (body), Space Mono (labels), Cavea
 - **Rules-engine fallback** with the same shape when there is no key, quota runs out or the API fails
 - DiceBear avatar seeded by name + top interest, editable interest tags, Recharts skill radar + score trajectory, shareable summary, 6-hour cache
 
+**Learning that goes beyond missions** (our paired-team feature)
+- **Reference videos per sub-topic:** mentors attach curated YouTube or Drive videos to any sub-topic (Modules tab → “📺 reference videos”). Mentees watch them in a player right on the Launchpad, with no points and no pressure. The demo cohort ships with 21 hand-checked videos from Traversy Media, Web Dev Simplified, Fireship, Kevin Powell, Programming with Mosh and Dave Gray.
+- **Live classes on a calendar (Google Meet):** mentors plan classes on a month calendar (Mission Control → **Classes**): title, date and time, duration, Google Meet link (one click opens *meet.google.com/new*), agenda and the sub-topic it belongs to. Mentees see them instantly on a new **Classes** page and a “Next live class” card on the Launchpad, with a countdown, a **Join Google Meet** button and **Add to Google Calendar**. Mentors can edit, cancel or restore a class.
+- **Recorded lectures:** after a class, the mentor pastes the recording link (Meet recording on Drive, or unlisted YouTube). It appears in the mentees’ **Recorded lectures** library, filterable by module, and inside the matching sub-topic on the Launchpad. Mentors can also add a recorded lecture with no live class.
+- Endpoints: `POST/DELETE /api/modules/:id/subtopics/:sub/references`, `GET/POST /api/programs/:id/sessions`, `PUT/DELETE /api/sessions/:id`, `GET /api/m/sessions`.
+
 **AI card explained** (`/profile`): a “Your AI card in 4 ideas” guide, numbered sections, a source tag on each (✦ AI writes this · ▦ Calculated from your data · ✍ Written by your mentor · 🔒 You control this), a “What it means” line under each, a yellow-mark legend and a “Show me around” tour.
 
 **Public**

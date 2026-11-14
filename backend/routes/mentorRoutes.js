@@ -17,6 +17,9 @@ const {
 } = require('../middleware/authMentor');
 const Module = require('../models/Module');
 const CohortReport = require('../models/CohortReport');
+const Session = require('../models/Session');
+const { cleanVideoUrl, cleanMeetUrl } = require('../services/media');
+const { shapeSessions } = require('../services/sessions');
 const { buildCard } = require('../services/card');
 const router = express.Router();
 
@@ -508,6 +511,125 @@ router.delete('/modules/:moduleId/subtopics/:subId', authenticate, async (req, r
     sub.deleteOne();
     await mod.save();
     res.json(mod);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Reference videos on a sub-topic ----
+router.post('/modules/:moduleId/subtopics/:subId/references', authenticate, async (req, res) => {
+  try {
+    const mod = await ownedModule(req, res);
+    if (!mod) return;
+    const sub = mod.subtopics.id(req.params.subId);
+    if (!sub) return res.status(404).json({ error: 'Sub-topic not found' });
+    const url = cleanVideoUrl(req.body?.url);
+    const title = String(req.body?.title || '').trim().slice(0, 140);
+    if (!url) return res.status(400).json({ error: 'Paste a full https:// video link (YouTube, Drive…)' });
+    if (!title) return res.status(400).json({ error: 'Give the video a title' });
+    if ((sub.references || []).length >= 8) return res.status(400).json({ error: 'Up to 8 reference videos per sub-topic' });
+    const minutes = Number(req.body?.minutes);
+    sub.references.push({ title, url, channel: String(req.body?.channel || '').trim().slice(0, 80), minutes: minutes > 0 ? Math.round(minutes) : undefined, addedBy: req.mentor.name });
+    await mod.save();
+    res.status(201).json(mod);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/modules/:moduleId/subtopics/:subId/references/:refId', authenticate, async (req, res) => {
+  try {
+    const mod = await ownedModule(req, res);
+    if (!mod) return;
+    const sub = mod.subtopics.id(req.params.subId);
+    const ref = sub?.references.id(req.params.refId);
+    if (!ref) return res.status(404).json({ error: 'Reference not found' });
+    ref.deleteOne();
+    await mod.save();
+    res.json(mod);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Live classes (Google Meet) & recorded lectures ----
+function sessionInput(body, partial = false) {
+  const out = {};
+  if (!partial || body.title !== undefined) {
+    out.title = String(body.title || '').trim().slice(0, 140);
+    if (!out.title) throw Object.assign(new Error('Title is required'), { status: 400 });
+  }
+  if (!partial || body.startsAt !== undefined) {
+    const d = new Date(body.startsAt);
+    if (Number.isNaN(d.getTime())) throw Object.assign(new Error('Pick a valid date and time'), { status: 400 });
+    out.startsAt = d;
+  }
+  if (body.durationMin !== undefined) out.durationMin = Math.min(480, Math.max(10, Number(body.durationMin) || 60));
+  if (body.agenda !== undefined) out.agenda = String(body.agenda || '').slice(0, 1000);
+  if (body.meetUrl !== undefined) {
+    const m = cleanMeetUrl(body.meetUrl);
+    if (m === null) throw Object.assign(new Error('Meet link must be https://meet.google.com/… (or another https meeting link)'), { status: 400 });
+    out.meetUrl = m;
+  }
+  if (body.recordingUrl !== undefined) {
+    const r = body.recordingUrl ? cleanVideoUrl(body.recordingUrl) : '';
+    if (r === null) throw Object.assign(new Error('Recording link must start with https://'), { status: 400 });
+    out.recordingUrl = r;
+  }
+  if (body.recordingNotes !== undefined) out.recordingNotes = String(body.recordingNotes || '').slice(0, 600);
+  if (body.module !== undefined) out.module = body.module || undefined;
+  if (body.subtopic !== undefined) out.subtopic = body.subtopic || undefined;
+  if (body.cancelled !== undefined) out.cancelled = !!body.cancelled;
+  return out;
+}
+
+router.get('/programs/:programId/sessions', authenticateStaff, async (req, res) => {
+  try {
+    if (!mentorOwnsProgram(req.mentor, req.params.programId)) return res.status(403).json({ error: 'Not authorized for this program' });
+    const sessions = await Session.find({ program: req.params.programId }).sort({ startsAt: 1 }).lean();
+    res.json(await shapeSessions(sessions));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/programs/:programId/sessions', authenticate, async (req, res) => {
+  try {
+    if (!mentorOwnsProgram(req.mentor, req.params.programId)) return res.status(403).json({ error: 'Not authorized for this program' });
+    const data = sessionInput(req.body || {});
+    if (!data.meetUrl && !data.recordingUrl) return res.status(400).json({ error: 'Add a Google Meet link (live class) or a recording link (recorded lecture)' });
+    const s = await Session.create({ ...data, program: req.params.programId, host: req.mentor.name, createdBy: req.mentor._id });
+    res.status(201).json((await shapeSessions([s.toObject()]))[0]);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+async function ownedSession(req, res) {
+  const s = await Session.findById(req.params.sessionId);
+  if (!s) { res.status(404).json({ error: 'Class not found' }); return null; }
+  if (!mentorOwnsProgram(req.mentor, s.program)) { res.status(403).json({ error: 'Not authorized for this program' }); return null; }
+  return s;
+}
+
+router.put('/sessions/:sessionId', authenticate, async (req, res) => {
+  try {
+    const s = await ownedSession(req, res);
+    if (!s) return;
+    Object.assign(s, sessionInput(req.body || {}, true));
+    await s.save();
+    res.json((await shapeSessions([s.toObject()]))[0]);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.delete('/sessions/:sessionId', authenticate, async (req, res) => {
+  try {
+    const s = await ownedSession(req, res);
+    if (!s) return;
+    await s.deleteOne();
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

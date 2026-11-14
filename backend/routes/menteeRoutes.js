@@ -11,6 +11,8 @@ const { loadMenteeState, buildStats, calculateRank } = require('../services/ment
 const { buildCard } = require('../services/card');
 const pipeline = require('../services/aiPipeline');
 const Reminder = require('../models/Reminder');
+const Session = require('../models/Session');
+const { shapeSessions } = require('../services/sessions');
 const router = express.Router();
 
 const DAY = 86400000;
@@ -71,6 +73,24 @@ router.post('/change-password', authenticateMentee, async (req, res) => {
 // Dashboard
 // ------------------------------------------------------------------ //
 
+
+// Live classes + recorded lectures for the mentee's cohorts.
+router.get('/sessions', authenticateMentee, async (req, res) => {
+  try {
+    const mentee = await Mentee.findById(req.mentee._id).select('programs').lean();
+    const sessions = await Session.find({ program: { $in: mentee?.programs || [] } }).sort({ startsAt: 1 }).lean();
+    const programs = await Program.find({ _id: { $in: mentee?.programs || [] } }).select('name').lean();
+    const pname = new Map(programs.map((p) => [String(p._id), p.name]));
+    const shaped = (await shapeSessions(sessions)).map((s) => ({ ...s, programName: pname.get(String(s.program)) || '' }));
+    res.json({
+      sessions: shaped,
+      next: shaped.find((s) => s.status === 'live') || shaped.find((s) => s.status === 'upcoming') || null,
+      recordings: shaped.filter((s) => s.recording).sort((a, b) => new Date(b.startsAt) - new Date(a.startsAt)),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Today's reminders from the "deadlineDigest" Render Workflow task (finished ones hidden).
 router.get('/reminders', authenticateMentee, async (req, res) => {

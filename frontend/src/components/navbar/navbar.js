@@ -16,6 +16,7 @@ const PUBLIC_LINKS = [
 ];
 const MENTEE_LINKS = [
   ['/dashboard', 'Launchpad'],
+  ['/classes', 'Classes'],
   ['/profile', 'My AI card'],
   ['/leaderboard', 'Leaderboard'],
 ];
