@@ -11,6 +11,15 @@ const Program = require('../models/Program');
 const Resource = require('../models/Resource');
 const Quiz = require('../models/Quiz');
 const QuizSubmission = require('../models/QuizSubmission');
+const Module = require('../models/Module');
+const Event = require('../models/Event');
+const Feedback = require('../models/Feedback');
+const Query = require('../models/Query');
+const Setting = require('../models/Setting');
+const Reminder = require('../models/Reminder');
+const CohortReport = require('../models/CohortReport');
+const WorkflowRun = require('../models/WorkflowRun');
+const insights = require('../services/insights');
 
 const DAY = 86400000;
 const daysFromNow = (n) => new Date(Date.now() + n * DAY);
@@ -19,7 +28,7 @@ async function seed({ reset = process.argv.includes('--reset') } = {}) {
   if (mongoose.connection.readyState === 0) await mongoose.connect(process.env.MONGO_URI);
 
   if (reset) {
-    await Promise.all([Mentor, Mentee, Program, Resource, Quiz, QuizSubmission].map((M) => M.deleteMany({})));
+    await Promise.all([Mentor, Mentee, Program, Resource, Quiz, QuizSubmission, Module, Event, Feedback, Query, Setting, Reminder, CohortReport, WorkflowRun].map((M) => M.deleteMany({})));
     console.log('Collections cleared.');
   }
   if (await Program.exists({ name: 'Web Dev Cohort 2026' })) {
@@ -38,6 +47,7 @@ async function seed({ reset = process.argv.includes('--reset') } = {}) {
     email: 'mentor@techneeds.dev',
     password: await bcrypt.hash(mentorPass, 10),
     programs: [web._id],
+    isAdmin: true, // core team: sees Command deck, Events and Inbox
   });
   await Mentor.create({ name: 'Meher Kapoor', email: 'meher@techneeds.dev', password: await bcrypt.hash(mentorPass, 10) });
   web.mentors.push(mentor._id);
@@ -80,8 +90,31 @@ async function seed({ reset = process.argv.includes('--reset') } = {}) {
   });
   futureQuiz.quiz = fq._id;
   await futureQuiz.save();
+  const weatherApp = await R({ title: 'Weather app with fetch()', type: 'project', maxScore: 100, deadline: daysFromNow(12), description: 'Call a public weather API with fetch(), handle loading and errors, and deploy it.', tags: ['javascript'] });
 
-  web.resources = [...resources, quizRes, futureQuiz].map((r) => r._id);
+  // Modules → sub-topics → missions
+  const mk = (title, description, order, subs) => Module.create({ program: web._id, title, description, order, subtopics: subs.map(([t, d, lock], k) => ({ title: t, description: d, order: k, lockUntilPrevious: !!lock })) });
+  const m1 = await mk('Web foundations: HTML & CSS', 'Structure, style and layout: everything a web page is made of.', 0, [
+    ['HTML & CSS basics', 'Tags, the box model and styling your first page.'],
+    ['Layouts: Flexbox & Grid', 'Place anything anywhere, on any screen size.'],
+    ['Ship a landing page', 'Put it together and deploy your first project.', true],
+  ]);
+  const m2 = await mk('JavaScript essentials', 'Make pages interactive and talk to APIs.', 1, [
+    ['Scope & closures', 'How JavaScript remembers variables.'],
+    ['Async JavaScript', 'Callbacks → promises → async/await.', true],
+    ['Fetch & APIs', 'Get real data from the internet.', true],
+  ]);
+  const m3 = await mk('React & building real apps', 'Components, state and shipping a real portfolio.', 2, [
+    ['React fundamentals', 'Components, props and hooks.'],
+    ['State with Context', 'Share state without prop drilling.'],
+    ['Portfolio project', 'Your own site, built with Next.js.'],
+  ]);
+  const place = async (res, mod, k) => { res.module = mod._id; res.subtopic = mod.subtopics[k]._id; await res.save(); };
+  await place(resources[0], m1, 0); await place(resources[1], m1, 1); await place(resources[3], m1, 2);
+  await place(resources[2], m2, 0); await place(futureQuiz, m2, 1); await place(weatherApp, m2, 2);
+  await place(resources[4], m3, 0); await place(quizRes, m3, 0); await place(resources[5], m3, 1); await place(resources[6], m3, 2);
+
+  web.resources = [...resources, quizRes, futureQuiz, weatherApp].map((r) => r._id);
   await web.save();
   await dsa.save();
 
@@ -142,9 +175,50 @@ async function seed({ reset = process.argv.includes('--reset') } = {}) {
     });
   }
 
+  // Events (photos live in frontend/public/events). Edit or add more from Mission Control → Events.
+  const E = (o) => Event.create({ published: true, createdBy: mentor._id, ...o });
+  await E({ title: 'InnoVortex 4.0', type: 'hackathon', featured: true, tracks: ['PitchStorm', 'Reimagathon', 'Hackathon'],
+    description: 'TechNeeds’ flagship innovation fest. Pitch a startup idea, reimagine a real platform, or build in the hackathon.',
+    startsAt: new Date('2026-11-05T04:30:00Z'), endsAt: new Date('2026-11-30T12:30:00Z'), mode: 'hybrid', venue: 'Online rounds + offline finale at IGDTUW',
+    registerUrl: 'https://www.communityx.in/', imageUrl: '/events/iv4-banner.jpg', color: '#BFE9FF' });
+  await E({ title: '21 Days of CS FUNdamentals', type: 'bootcamp', description: 'OOPs, DBMS, OS and CN prep for intern and placement season. Participation certificates for all; resume reviews for the top 30 performers.',
+    startsAt: new Date('2027-01-01T04:30:00Z'), endsAt: new Date('2027-01-21T12:30:00Z'), dateLabel: '1 Jan onwards', mode: 'online', venue: 'Online', imageUrl: '/events/cs21.jpg', color: '#BFE9FF' });
+  await E({ title: 'InnoVortex 3.0', type: 'hackathon', tracks: ['Ideathon', 'Reimagine', 'Hackathon'], description: 'Two days of ideation, reimagination and hacking at IIIT Delhi.',
+    startsAt: new Date('2025-10-04T04:30:00Z'), endsAt: new Date('2025-10-05T12:30:00Z'), mode: 'offline', venue: 'IIIT Delhi',
+    imageUrl: '/events/iv3-poster.jpg', gallery: ['/events/iv3-wrap.jpg', '/events/iv3-tracks.jpg', '/events/iv3-starburst.jpg', '/events/iv-stats.jpg'],
+    highlight: '2 lakh+ impressions · 3500+ registrations · 500+ submissions · top 80 teams', color: '#FFE45C' });
+  await E({ title: 'Summer Skills Sprint Challenge 2026', type: 'challenge', description: 'Step into the multiverse of creativity and tech.',
+    startsAt: new Date('2026-06-01T04:30:00Z'), endsAt: new Date('2026-06-30T12:30:00Z'), dateLabel: 'Summer 2026', mode: 'online', imageUrl: '/events/summer-sprint.jpg', color: '#FFD1DC' });
+  await E({ title: 'Orientation ’25', type: 'orientation', description: 'Welcoming the new batch to TechNeeds.',
+    startsAt: new Date('2025-08-20T05:30:00Z'), dateLabel: '2025', mode: 'offline', venue: 'IGDTUW auditorium', imageUrl: '/events/orientation25.jpg', color: '#E6DEFF' });
+  await E({ title: 'Shark Tank IGDTUW', type: 'pitch', description: 'Students pitched startup ideas to a panel of judges.',
+    startsAt: new Date('2025-03-01T05:30:00Z'), dateLabel: 'Past event', mode: 'offline', venue: 'IGDTUW', imageUrl: '/events/shark-tank.jpg', color: '#C9F5DF' });
+  await E({ title: 'Global Trade & Protectionism', type: 'talk', description: 'Expert talk with certificates and goodies for participants.',
+    startsAt: new Date('2025-02-01T05:30:00Z'), dateLabel: 'Past event', mode: 'offline', venue: 'IGDTUW', imageUrl: '/events/trade-seminar.jpg', color: '#BFE9FF' });
+  const iv2 = await E({ title: 'InnoVortex 2.0', type: 'hackathon', description: 'The second InnoVortex, and the team celebration after it.',
+    startsAt: new Date('2024-10-01T05:30:00Z'), dateLabel: 'Past event', mode: 'offline', imageUrl: '/events/iv2-cake.jpg', gallery: ['/events/iv2-celebration.jpg'], color: '#FFE45C' });
+
+  await Setting.create({ key: 'announcement', value: { text: 'InnoVortex 4.0 Round 1 is live. Results on the Events page soon!', by: mentor.name, at: new Date() } });
+  await Query.create([
+    { ticket: 'TN-Q-0001', name: 'Isha', email: 'isha@igdtuw.ac.in', topic: 'joining', message: 'Can I join the DSA bootcamp if I’m in ECE? Do I need to know C++ already?' },
+    { ticket: 'TN-Q-0002', name: 'Meher', email: 'meher.s@igdtuw.ac.in', topic: 'events', message: 'Will InnoVortex 4.0 give certificates for Round 1?' },
+    { ticket: 'TN-Q-0003', name: 'Sana', email: 'sana@igdtuw.ac.in', topic: 'missions', message: 'The quiz closed before I could submit. Can it reopen?', status: 'answered', reply: 'Quizzes close at the deadline so everyone gets the same window, but your mentor can extend it once. Message them from the Launchpad.', repliedBy: mentor.name, repliedAt: new Date() },
+  ]);
+  await Feedback.create([
+    { source: 'event', event: iv2._id, rating: 5, comment: 'Loved the vibe and the mentors. More snacks next time!', name: 'Ritika' },
+    { source: 'mission', resource: resources[4]._id, rating: 4, comment: 'Great React intro, a bit fast in the middle.' },
+    { source: 'site', rating: 5, comment: 'The new Launchpad finally makes sense.', page: '/dashboard' },
+  ]);
+
+  // First reminders + weekly reports, so the Launchpad and Mission control aren't empty.
+  // (Same code the Render Workflow tasks run; rules summaries only, no Gemini call here.)
+  const digest = await insights.runDeadlineDigest({ hours: 48 });
+  for (const id of await insights.programIds()) await insights.buildCohortReport(id);
+  console.log(`Automations: ${digest.withReminders} mentees with reminders, weekly reports for every cohort.`);
+
   console.log('\nDemo data ready');
-  console.log('  Admin   :', process.env.ADMIN_EMAIL, '/ (ADMIN_PASSWORD from .env)');
-  console.log('  Mentor  : mentor@techneeds.dev /', mentorPass);
+  console.log('  Mentor (core team): mentor@techneeds.dev /', mentorPass, '  — sees Command deck, Events, Inbox, Automations');
+  console.log('  Mentor (regular)  : meher@techneeds.dev /', mentorPass);
   console.log('  Mentee  : TN-WEBD-0004 (Ananya) /', menteePass, '  — any TN-WEBD-0001…0008 works');
   console.log('  Public AI card: /u/TN-WEBD-0004\n');
 }

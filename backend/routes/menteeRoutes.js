@@ -9,6 +9,8 @@ const { authenticateMentee, signToken } = require('../middleware/authMentor');
 const { generateProfile } = require('../services/aiProfile');
 const { loadMenteeState, buildStats, calculateRank } = require('../services/menteeState');
 const { buildCard } = require('../services/card');
+const pipeline = require('../services/aiPipeline');
+const Reminder = require('../models/Reminder');
 const router = express.Router();
 
 const DAY = 86400000;
@@ -70,6 +72,20 @@ router.post('/change-password', authenticateMentee, async (req, res) => {
 // ------------------------------------------------------------------ //
 
 
+// Today's reminders from the "deadlineDigest" Render Workflow task (finished ones hidden).
+router.get('/reminders', authenticateMentee, async (req, res) => {
+  try {
+    const r = await Reminder.findOne({ mentee: req.mentee._id, createdAt: { $gte: new Date(Date.now() - 30 * 3600 * 1000) } }).sort({ createdAt: -1 }).lean();
+    if (!r) return res.json(null);
+    const mentee = await Mentee.findById(req.mentee._id).select('completedResources.resource').lean();
+    const done = new Set((mentee?.completedResources || []).map((c) => String(c.resource)));
+    const items = r.items.filter((i) => !done.has(String(i.resource)));
+    res.json({ day: r.day, generatedAt: r.updatedAt || r.createdAt, items, via: r.runId ? 'render-workflows' : 'inline' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/dashboard', authenticateMentee, async (req, res) => {
   try {
     const { mentee, programs, totalScore } = await loadMenteeState(req.mentee._id);
@@ -103,6 +119,14 @@ router.get('/dashboard', authenticateMentee, async (req, res) => {
 // flows; previously any resource could be "marked done" for full marks)
 // ------------------------------------------------------------------ //
 
+// Missions in a sub-topic marked "lock until previous" stay closed until the previous one is done.
+async function lockedBySubtopic(menteeId, resource) {
+  if (!resource.subtopic) return false;
+  const { programs } = await loadMenteeState(menteeId);
+  const r = programs.flatMap((p) => p.resources).find((x) => String(x._id) === String(resource._id));
+  return r?.status === 'locked' && r.lockedReason === 'previous_subtopic';
+}
+
 router.post('/resources/:id/complete', authenticateMentee, async (req, res) => {
   try {
     const resource = await Resource.findById(req.params.id);
@@ -110,6 +134,7 @@ router.post('/resources/:id/complete', authenticateMentee, async (req, res) => {
     if (!resource) return res.status(404).json({ error: 'Resource not found' });
     if (!inProgram(mentee, resource)) return res.status(403).json({ error: 'Not enrolled in this program' });
     if (resource.isLocked) return res.status(403).json({ error: 'Resource is locked' });
+    if (await lockedBySubtopic(req.mentee._id, resource)) return res.status(403).json({ error: 'Finish the previous sub-topic first' });
     if (resource.type !== 'video') {
       return res.status(400).json({ error: `Use the ${resource.type} flow to complete this resource` });
     }
@@ -171,6 +196,7 @@ router.post('/resources/:id/quiz/submit', authenticateMentee, async (req, res) =
     if (!resource || resource.type !== 'quiz') return res.status(400).json({ error: 'Invalid quiz resource' });
     if (!inProgram(mentee, resource)) return res.status(403).json({ error: 'Not enrolled in this program' });
     if (resource.isLocked) return res.status(403).json({ error: 'Quiz is locked' });
+    if (await lockedBySubtopic(req.mentee._id, resource)) return res.status(403).json({ error: 'Finish the previous sub-topic first' });
 
     const quiz = await Quiz.findOne({ resource: resourceId });
     if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
@@ -227,6 +253,7 @@ router.post('/resources/:resourceId/project', authenticateMentee, async (req, re
     if (resource.type !== 'project') return res.status(400).json({ error: 'Invalid resource type' });
     if (!inProgram(mentee, resource)) return res.status(403).json({ error: 'Not enrolled in this program' });
     if (resource.isLocked) return res.status(403).json({ error: 'Resource is locked' });
+    if (await lockedBySubtopic(req.mentee._id, resource)) return res.status(403).json({ error: 'Finish the previous sub-topic first' });
     if (!githubLink || !deployedLink || !description) return res.status(400).json({ error: 'All fields are required' });
 
     const urlOk = (u) => { try { return ['http:', 'https:'].includes(new URL(u).protocol); } catch { return false; } };
@@ -297,9 +324,9 @@ router.post('/profile/ai', authenticateMentee, async (req, res) => {
     }
 
     const { stats } = await buildStats(req.mentee._id);
-    const { profile, source } = await generateProfile(stats);
+    const { profile, source, model } = await generateProfile(stats);
     const at = new Date();
-    await Mentee.updateOne({ _id: req.mentee._id }, { $set: { aiProfile: profile, aiProfileAt: at, aiProfileSource: source } });
+    await Mentee.updateOne({ _id: req.mentee._id }, { $set: { aiProfile: { ...profile, model }, aiProfileAt: at, aiProfileSource: source, aiProfileModel: model } });
     res.json({ ai: profile, aiGeneratedAt: at, aiSource: source, cached: false });
   } catch (err) {
     console.error(err);
@@ -391,6 +418,23 @@ router.post('/card/ai', authenticateMentee, async (req, res) => {
     res.json({ ...card, cooldown: !allowed });
   } catch (err) {
     console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Status of the learner's AI card run on Render Workflows (polled by the card page).
+router.get('/card/ai/status', authenticateMentee, async (req, res) => {
+  try {
+    const mentee = await Mentee.findById(req.mentee._id).select('aiJob aiProfileSource aiProfileAt aiProfileModel');
+    const job = await pipeline.refreshStatus(mentee);
+    res.json({
+      pipeline: pipeline.enabled() ? 'render-workflows' : 'inline',
+      job: pipeline.jobView(job),
+      aiSource: mentee.aiProfileSource || null,
+      aiModel: mentee.aiProfileModel || null,
+      aiGeneratedAt: mentee.aiProfileAt || null,
+    });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

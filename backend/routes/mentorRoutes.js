@@ -13,7 +13,10 @@ const {
   authenticateStaff,
   signToken,
   mentorOwnsProgram,
+  isCoreTeam,
 } = require('../middleware/authMentor');
+const Module = require('../models/Module');
+const CohortReport = require('../models/CohortReport');
 const { buildCard } = require('../services/card');
 const router = express.Router();
 
@@ -23,6 +26,7 @@ const generatePassword = () => 'tn-' + crypto.randomBytes(6).toString('base64url
 const sanitizeMentor = (m) => {
   const obj = m.toObject ? m.toObject() : { ...m };
   delete obj.password;
+  obj.isCoreTeam = isCoreTeam(m);
   return obj;
 };
 
@@ -54,7 +58,7 @@ router.post('/mentors', authenticateAdmin, async (req, res) => {
 router.get('/mentors', authenticateAdmin, async (req, res) => {
   try {
     const mentors = await Mentor.find().select('-password').populate('programs', 'name');
-    res.json(mentors);
+    res.json(mentors.map(sanitizeMentor));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -63,7 +67,9 @@ router.get('/mentors', authenticateAdmin, async (req, res) => {
 // Admin sees all programs; a mentor sees only their own.
 router.get('/programs', authenticateStaff, async (req, res) => {
   try {
-    const filter = req.mentor ? { _id: { $in: req.mentor.programs } } : {};
+    // Core team asking for ?all=1 (Command deck) sees every program; mentors see their own.
+    const all = req.admin && String(req.query.all) === '1';
+    const filter = all ? {} : { _id: { $in: req.mentor.programs } };
     const programs = await Program.find(filter).populate('mentors', 'name email').lean();
     const ids = programs.map((p) => p._id);
     const counts = await Mentee.aggregate([
@@ -142,7 +148,7 @@ router.post('/mentors/login', async (req, res) => {
 
 router.get('/mentors/me', authenticate, async (req, res) => {
   const mentor = await Mentor.findById(req.mentor._id).select('-password').populate('programs', 'name');
-  res.json(mentor);
+  res.json(sanitizeMentor(mentor));
 });
 
 // ------------------------------------------------------------------ //
@@ -151,7 +157,7 @@ router.get('/mentors/me', authenticate, async (req, res) => {
 
 router.post('/resources', authenticate, async (req, res) => {
   try {
-    const { title, type, url, deadline, maxScore, program, description, tags } = req.body;
+    const { title, type, url, deadline, maxScore, program, description, tags, module: moduleId, subtopic } = req.body;
     if (!title || !type || !program) return res.status(400).json({ error: 'Title, type and program are required' });
     if (!['video', 'project'].includes(type)) {
       return res.status(400).json({ error: 'Use /resources/quiz to create quizzes' });
@@ -164,6 +170,7 @@ router.post('/resources', authenticate, async (req, res) => {
 
     const resource = new Resource({
       title, type, url, description, tags, program,
+      ...(await placementFor(program, moduleId, subtopic)),
       deadline: deadline || undefined,
       maxScore: maxScore !== undefined && maxScore !== '' ? Number(maxScore) : undefined,
       addedBy: req.mentor._id,
@@ -178,7 +185,7 @@ router.post('/resources', authenticate, async (req, res) => {
 
 router.post('/resources/quiz', authenticate, async (req, res) => {
   try {
-    const { title, program, questions, startTime, endTime, revealScores, description, tags } = req.body;
+    const { title, program, questions, startTime, endTime, revealScores, description, tags, module: moduleId, subtopic } = req.body;
     if (!title || !program) return res.status(400).json({ error: 'Title and program are required' });
     if (!Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({ error: 'Add at least one question' });
@@ -201,6 +208,7 @@ router.post('/resources/quiz', authenticate, async (req, res) => {
     // unlocked them. Availability is now governed by the start/end window.
     const resource = new Resource({
       title, description, tags, program, maxScore,
+      ...(await placementFor(program, moduleId, subtopic)),
       type: 'quiz',
       isLocked: false,
       addedBy: req.mentor._id,
@@ -328,6 +336,195 @@ router.post('/mentees/:menteeId/reset-password', authenticate, async (req, res) 
     mentee.password = await bcrypt.hash(tempPassword, 10);
     await mentee.save();
     res.json({ enrollmentNumber: mentee.enrollmentNumber, tempPassword });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ------------------------------------------------------------------ //
+// Modules → sub-topics → missions
+// ------------------------------------------------------------------ //
+
+// Validates a (module, subtopic) pair for a program; returns fields for the Resource.
+async function placementFor(programId, moduleId, subtopicId) {
+  if (!moduleId) return {};
+  const mod = await Module.findOne({ _id: moduleId, program: programId });
+  if (!mod) return {};
+  const sub = subtopicId ? mod.subtopics.id(subtopicId) : null;
+  return { module: mod._id, subtopic: sub ? sub._id : undefined };
+}
+
+async function ownedModule(req, res) {
+  if (!/^[a-f0-9]{24}$/i.test(req.params.moduleId)) { res.status(404).json({ error: 'Module not found' }); return null; }
+  const mod = await Module.findById(req.params.moduleId);
+  if (!mod) { res.status(404).json({ error: 'Module not found' }); return null; }
+  if (!mentorOwnsProgram(req.mentor, mod.program)) { res.status(403).json({ error: 'Not authorized for this program' }); return null; }
+  return mod;
+}
+
+const cleanSub = (b = {}) => ({
+  title: String(b.title || '').trim().slice(0, 120),
+  description: b.description ? String(b.description).slice(0, 400) : undefined,
+  lockUntilPrevious: !!b.lockUntilPrevious,
+});
+
+// Latest weekly report (written by the "weeklyCohortReport" Render Workflow task).
+router.get('/programs/:programId/report', authenticateStaff, async (req, res) => {
+  try {
+    if (!mentorOwnsProgram(req.mentor, req.params.programId)) return res.status(403).json({ error: 'Not authorized for this program' });
+    const report = await CohortReport.findOne({ program: req.params.programId }).sort({ createdAt: -1 }).lean();
+    res.json(report || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/programs/:programId/modules', authenticateStaff, async (req, res) => {
+  try {
+    if (!mentorOwnsProgram(req.mentor, req.params.programId)) return res.status(403).json({ error: 'Not authorized for this program' });
+    const [modules, resources] = await Promise.all([
+      Module.find({ program: req.params.programId }).sort({ order: 1, createdAt: 1 }).lean(),
+      Resource.find({ program: req.params.programId }).select('title type deadline maxScore module subtopic').lean(),
+    ]);
+    const byKey = {};
+    resources.forEach((r) => {
+      const k = r.module ? `${r.module}:${r.subtopic || ''}` : 'none';
+      (byKey[k] = byKey[k] || []).push(r);
+    });
+    res.json({
+      modules: modules.map((m) => ({
+        ...m,
+        subtopics: [...m.subtopics].sort((a, b) => a.order - b.order).map((st) => ({ ...st, resources: byKey[`${m._id}:${st._id}`] || [] })),
+        looseResources: byKey[`${m._id}:`] || [],
+      })),
+      unplaced: byKey.none || [],
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/programs/:programId/modules', authenticate, async (req, res) => {
+  try {
+    if (!mentorOwnsProgram(req.mentor, req.params.programId)) return res.status(403).json({ error: 'Not authorized for this program' });
+    const title = String(req.body?.title || '').trim();
+    if (!title) return res.status(400).json({ error: 'Module title is required' });
+    const count = await Module.countDocuments({ program: req.params.programId });
+    const subs = (Array.isArray(req.body.subtopics) ? req.body.subtopics : []).map(cleanSub).filter((x) => x.title)
+      .map((x, i) => ({ ...x, order: i }));
+    const mod = await Module.create({
+      program: req.params.programId, title: title.slice(0, 120),
+      description: req.body.description ? String(req.body.description).slice(0, 400) : undefined,
+      order: count, subtopics: subs,
+    });
+    res.status(201).json(mod);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/modules/:moduleId', authenticate, async (req, res) => {
+  try {
+    const mod = await ownedModule(req, res);
+    if (!mod) return;
+    if (req.body.title !== undefined) mod.title = String(req.body.title).trim().slice(0, 120) || mod.title;
+    if (req.body.description !== undefined) mod.description = String(req.body.description).slice(0, 400);
+    if (req.body.order !== undefined) mod.order = Number(req.body.order) || 0;
+    await mod.save();
+    res.json(mod);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/modules/:moduleId', authenticate, async (req, res) => {
+  try {
+    const mod = await ownedModule(req, res);
+    if (!mod) return;
+    await Resource.updateMany({ module: mod._id }, { $unset: { module: 1, subtopic: 1 } });
+    await mod.deleteOne();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reorder modules: { order: [moduleId, ...] }
+router.put('/programs/:programId/modules/order', authenticate, async (req, res) => {
+  try {
+    if (!mentorOwnsProgram(req.mentor, req.params.programId)) return res.status(403).json({ error: 'Not authorized for this program' });
+    const ids = (req.body?.order || []).filter((x) => /^[a-f0-9]{24}$/i.test(x));
+    await Promise.all(ids.map((id, i) => Module.updateOne({ _id: id, program: req.params.programId }, { $set: { order: i } })));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/modules/:moduleId/subtopics', authenticate, async (req, res) => {
+  try {
+    const mod = await ownedModule(req, res);
+    if (!mod) return;
+    const sub = cleanSub(req.body);
+    if (!sub.title) return res.status(400).json({ error: 'Sub-topic title is required' });
+    mod.subtopics.push({ ...sub, order: mod.subtopics.length });
+    await mod.save();
+    res.status(201).json(mod);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/modules/:moduleId/subtopics/:subId', authenticate, async (req, res) => {
+  try {
+    const mod = await ownedModule(req, res);
+    if (!mod) return;
+    const sub = mod.subtopics.id(req.params.subId);
+    if (!sub) return res.status(404).json({ error: 'Sub-topic not found' });
+    if (req.body.title !== undefined) sub.title = String(req.body.title).trim().slice(0, 120) || sub.title;
+    if (req.body.description !== undefined) sub.description = String(req.body.description).slice(0, 400);
+    if (req.body.lockUntilPrevious !== undefined) sub.lockUntilPrevious = !!req.body.lockUntilPrevious;
+    if (req.body.move === 'up' || req.body.move === 'down') {
+      const list = [...mod.subtopics].sort((a, b) => a.order - b.order);
+      const i = list.findIndex((x) => String(x._id) === String(sub._id));
+      const j = req.body.move === 'up' ? i - 1 : i + 1;
+      if (j >= 0 && j < list.length) { const t = list[i].order; list[i].order = list[j].order; list[j].order = t; }
+      list.forEach((x, k) => { x.order = k; });
+    }
+    await mod.save();
+    res.json(mod);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/modules/:moduleId/subtopics/:subId', authenticate, async (req, res) => {
+  try {
+    const mod = await ownedModule(req, res);
+    if (!mod) return;
+    const sub = mod.subtopics.id(req.params.subId);
+    if (!sub) return res.status(404).json({ error: 'Sub-topic not found' });
+    await Resource.updateMany({ module: mod._id, subtopic: sub._id }, { $unset: { subtopic: 1 } });
+    sub.deleteOne();
+    await mod.save();
+    res.json(mod);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Move a mission into a module/sub-topic (or out: module = null)
+router.put('/resources/:resourceId/placement', authenticate, async (req, res) => {
+  try {
+    if (!/^[a-f0-9]{24}$/i.test(req.params.resourceId)) return res.status(404).json({ error: 'Resource not found' });
+    const r = await Resource.findById(req.params.resourceId);
+    if (!r) return res.status(404).json({ error: 'Resource not found' });
+    if (!mentorOwnsProgram(req.mentor, r.program)) return res.status(403).json({ error: 'Not authorized for this program' });
+    const place = await placementFor(r.program, req.body?.module, req.body?.subtopic);
+    if (req.body?.module && !place.module) return res.status(400).json({ error: 'Module not found in this program' });
+    r.module = place.module; r.subtopic = place.subtopic;
+    await r.save();
+    res.json(r);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

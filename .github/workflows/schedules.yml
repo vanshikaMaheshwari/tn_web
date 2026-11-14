@@ -1,0 +1,40 @@
+# Free scheduler for the TechNeeds automations that run on Render Workflows.
+# It only "rings the bell": the API checks the secret and starts the Render task.
+# Repo → Settings → Secrets and variables → Actions → add:
+#   TN_API_URL   e.g. https://tn-web-8ynw.onrender.com   (no trailing slash)
+#   CRON_SECRET  the same value as CRON_SECRET on the Render API service
+name: TechNeeds schedules
+
+on:
+  schedule:
+    - cron: '30 2 * * *'   # every day 08:00 IST  → deadline digest
+    - cron: '0 3 * * 1'    # every Monday 08:30 IST → weekly cohort report
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Task to run now'
+        required: true
+        default: deadlineDigest
+        type: choice
+        options: [deadlineDigest, weeklyCohortReport, refreshAllCards]
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pick task
+        id: pick
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then echo "task=${{ inputs.task }}" >> "$GITHUB_OUTPUT";
+          elif [ "${{ github.event.schedule }}" = "0 3 * * 1" ]; then echo "task=weeklyCohortReport" >> "$GITHUB_OUTPUT";
+          else echo "task=deadlineDigest" >> "$GITHUB_OUTPUT"; fi
+      - name: Start ${{ steps.pick.outputs.task }} on Render Workflows
+        env:
+          TN_API_URL: ${{ secrets.TN_API_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # The free API sleeps when idle; wake it first (can take ~50s).
+          curl -s -o /dev/null --max-time 90 "$TN_API_URL/api/health" || true
+          curl -fsS --retry 3 --retry-delay 15 --max-time 90 -X POST \
+            -H "x-cron-secret: $CRON_SECRET" \
+            "$TN_API_URL/api/cron/${{ steps.pick.outputs.task }}"

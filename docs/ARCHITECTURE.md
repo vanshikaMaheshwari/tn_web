@@ -48,6 +48,22 @@ Pipeline:
 4. Fallback: if no `GEMINI_API_KEY` or the call fails, a rule-based generator returns the same shape — the page never breaks during judging.
 5. Avatar: DiceBear (`notionists`/`bottts`) seeded from name + top interest, so it shifts as the learner's focus changes.
 
+### 4.1 AI pipeline (Render Workflows)
+
+`backend/workflows/index.js` registers two tasks with the Render SDK (`@renderinc/sdk/workflows`):
+`generateAiCard` (retry: 4 attempts, 5s base wait, ×2 backoff; 180s timeout; flex plan) and
+`refreshAllCards` (fans out `generateAiCard` via `ctx.run`). The API (`services/aiPipeline.js`) queues runs with
+`render.workflows.startTask('techneeds-ai/generateAiCard', [menteeId, { force }], { idempotencyKey })`, stores the
+run id on the mentee (`aiJob`) and reads status with `getTaskRun`. Endpoints: `GET /api/m/card/ai/status`,
+`POST /api/admin/ai/refresh-all`, `GET /api/admin/ai/runs/:runId`. Pipeline off → inline generation (unchanged).
+
+### 4.2 Cohort automations (Render Workflows)
+
+- Tasks: `deadlineDigest` (daily), `weeklyCohortReport` → chained `summarizeCohortReport` per cohort (Gemini, 4 retries), alongside `generateAiCard` / `refreshAllCards`.
+- Shared logic lives in `services/insights.js`, so the workflow and the API (inline fallback) run identical code.
+- Triggers: core-team “Run now” (`POST /api/admin/automations/:task`) and a GitHub Actions schedule (`POST /api/cron/:task` with `x-cron-secret`).
+- Storage: `Reminder` (per mentee per IST day, TTL 14 days), `CohortReport` (per cohort per run), `WorkflowRun` (run log with Render run ids, status, retries, results).
+
 ## 5. Backend changes
 
 | Area | Change |
@@ -65,6 +81,14 @@ Routes: `/` home · `/login` (role tabs) · `/leaderboard` · `/dashboard` · `/
 - `lib/api.js` — single client, `NEXT_PUBLIC_API_URL`, token helpers, all calls moved here.
 - Shared: `components/ui` (Icon, Logo, Orbit, Toast, Loading), `components/mentor/MentorApp.js`, role-aware `navbar`, `lib/useAuth.js` route guards, `lib/useReveal.js` (GSAP).
 - `alert()` replaced by an inline toast.
+
+## 6.1 Community, events and core team (v3)
+
+- **Core team instead of a public admin:** `authenticateAdmin` = valid mentor token + (`Mentor.isAdmin` or email in `ADMIN_EMAILS`). `/api/admin/login` returns 410. The frontend only renders the core-team tabs when `/api/mentors/me` says `isCoreTeam`, but the server is the real gate.
+- **New models:** `Event`, `Feedback` (event / mission / site, 1–5 stars), `Query` (ticket `TN-Q-xxxx`, open → answered → resolved), `Module` (ordered sub-topics with `lockUntilPrevious`), `Setting` (announcement). `Resource` gains `module` + `subtopic`.
+- **Public routes** (`routes/communityRoutes.js`): `GET /api/events`, `POST /api/events/:id/feedback`, `POST /api/feedback`, `POST /api/queries`, `GET /api/queries/track`, `GET /api/techboard`.
+- **Modules:** `services/menteeState.attachModules()` builds the module tree per mentee with sub-topic states (done / current / open / locked). Locked missions are refused by the complete, quiz-submit and project routes (403 “Finish the previous sub-topic first”).
+- **Explainer video:** 60 s, 1280×720, motion graphics drawn in code (no AI footage), captions in WebVTT, chapters at 0 / 9 / 21 / 31 / 45 s.
 
 ## 7. Deploy
 

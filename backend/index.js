@@ -26,6 +26,8 @@ app.get('/api/health', (req, res) =>
 );
 
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/cron', require('./routes/cronRoutes'));
+app.use('/api', require('./routes/communityRoutes'));
 app.use('/api/m', require('./routes/menteeRoutes'));
 app.use('/api', require('./routes/mentorRoutes'));
 

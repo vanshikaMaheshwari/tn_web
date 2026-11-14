@@ -18,6 +18,9 @@ const ResourceSchema = new mongoose.Schema({
     ref: 'Quiz'
   },
   isLocked: { type: Boolean, default: false },
+  // Optional place in the cohort structure
+  module: { type: mongoose.Schema.Types.ObjectId, ref: 'Module' },
+  subtopic: { type: mongoose.Schema.Types.ObjectId },
   addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Mentor' }
 }, { timestamps: true });
 

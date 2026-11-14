@@ -80,9 +80,7 @@ export async function login(role, { id, password }) {
     session.set({ token: d.token, role, name: d.mentor?.name });
     return d;
   }
-  const d = await request('/api/admin/login', { method: 'POST', auth: false, body: { email: id, password } });
-  session.set({ token: d.token, role: 'admin', name: 'Admin' });
-  return d;
+  throw new ApiError('Unknown role', 400);
 }
 export const logout = () => session.clear();
 
@@ -102,6 +100,7 @@ export const generateAiProfile = (force = false) => request('/api/m/profile/ai',
 export const updateInterests = (interests) => request('/api/m/interests', { method: 'PUT', body: { interests } });
 export const getCard = () => request('/api/m/card');
 export const refreshCard = () => request('/api/m/card/ai', { method: 'POST' });
+export const getCardAiStatus = () => request('/api/m/card/ai/status');
 export const updatePrivacy = (body) => request('/api/m/privacy', { method: 'PUT', body });
 export const getPublicCard = (enrollment) => request(`/api/m/u/${encodeURIComponent(enrollment)}`, { auth: false });
 export const changePassword = (currentPassword, newPassword) =>
@@ -125,7 +124,42 @@ export const verifyProject = (menteeId, resourceId, score, feedback) =>
 
 // ---------- admin ----------
 export const getAdminStats = () => request('/api/admin/stats');
-export const getAllPrograms = () => request('/api/programs');
+export const refreshAllAiCards = () => request('/api/admin/ai/refresh-all', { method: 'POST', body: { staleHours: 6 } });
+export const getAiRun = (runId) => request(`/api/admin/ai/runs/${runId}`);
+// Automations (Render Workflows)
+export const getAutomations = () => request('/api/admin/automations');
+export const startAutomation = (task, body = {}) => request(`/api/admin/automations/${task}`, { method: 'POST', body });
+export const getReminders = () => request('/api/m/reminders');
+export const getCohortReport = (programId) => request(`/api/programs/${programId}/report`);
+export const getAllPrograms = () => request('/api/programs?all=1');
+export const setCoreTeam = (mentorId, isAdmin) => request(`/api/admin/mentors/${mentorId}/core`, { method: 'PUT', body: { isAdmin } });
+export const getAdminEvents = () => request('/api/admin/events');
+export const createEvent = (body) => request('/api/admin/events', { method: 'POST', body });
+export const updateEvent = (id, body) => request(`/api/admin/events/${id}`, { method: 'PUT', body });
+export const deleteEvent = (id) => request(`/api/admin/events/${id}`, { method: 'DELETE' });
+export const getAdminQueries = (status) => request(`/api/admin/queries${status ? `?status=${status}` : ''}`);
+export const updateQuery = (id, body) => request(`/api/admin/queries/${id}`, { method: 'PUT', body });
+export const getAdminFeedback = () => request('/api/admin/feedback');
+export const setAnnouncement = (text) => request('/api/admin/announcement', { method: 'PUT', body: { text } });
+
+// ---------- community (public) ----------
+export const getEvents = () => request('/api/events', { auth: false });
+export const sendEventFeedback = (id, body) => request(`/api/events/${id}/feedback`, { method: 'POST', body, auth: false });
+export const sendFeedback = (body) => request('/api/feedback', { method: 'POST', body });
+export const sendQuery = (body) => request('/api/queries', { method: 'POST', body, auth: false });
+export const trackQuery = (ticket, email) => request(`/api/queries/track?ticket=${encodeURIComponent(ticket)}&email=${encodeURIComponent(email)}`, { auth: false });
+export const getTechboard = () => request('/api/techboard', { auth: false });
+
+// ---------- modules (mentor) ----------
+export const getModules = (programId) => request(`/api/programs/${programId}/modules`);
+export const createModule = (programId, body) => request(`/api/programs/${programId}/modules`, { method: 'POST', body });
+export const updateModule = (id, body) => request(`/api/modules/${id}`, { method: 'PUT', body });
+export const deleteModule = (id) => request(`/api/modules/${id}`, { method: 'DELETE' });
+export const reorderModules = (programId, order) => request(`/api/programs/${programId}/modules/order`, { method: 'PUT', body: { order } });
+export const addSubtopic = (moduleId, body) => request(`/api/modules/${moduleId}/subtopics`, { method: 'POST', body });
+export const updateSubtopic = (moduleId, subId, body) => request(`/api/modules/${moduleId}/subtopics/${subId}`, { method: 'PUT', body });
+export const deleteSubtopic = (moduleId, subId) => request(`/api/modules/${moduleId}/subtopics/${subId}`, { method: 'DELETE' });
+export const placeResource = (resourceId, module, subtopic) => request(`/api/resources/${resourceId}/placement`, { method: 'PUT', body: { module, subtopic } });
 export const createProgram = (name, description) => request('/api/programs', { method: 'POST', body: { name, description } });
 export const getAllMentors = () => request('/api/mentors');
 export const createMentor = (name, email) => request('/api/mentors', { method: 'POST', body: { name, email } });

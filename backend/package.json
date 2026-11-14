@@ -7,13 +7,16 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "seed": "node scripts/seed.js",
-    "seed:reset": "node scripts/seed.js --reset"
+    "seed:reset": "node scripts/seed.js --reset",
+    "workflows": "node workflows/index.js",
+    "workflows:dev": "render workflows dev -- \"node workflows/index.js\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@renderinc/sdk": "^1.8.0",
     "bcryptjs": "^3.0.2",
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
@@ -23,6 +26,6 @@
     "mongoose": "^8.13.2"
   },
   "engines": {
-    "node": ">=18"
+    "node": "22.x"
   }
 }

@@ -8,6 +8,7 @@ import { session, logout, initials } from '@/lib/api';
 
 const PUBLIC_LINKS = [
   ['/', 'Home'],
+  ['/events', 'Events'],
   ['/techboard', 'Techboard'],
   ['/team', 'Team'],
   ['/leaderboard', 'Leaderboard'],
@@ -35,7 +36,7 @@ export default function Navbar() {
   const isMentee = s.role === 'mentee' && s.token;
   const links = isMentee ? MENTEE_LINKS : PUBLIC_LINKS;
   const home = isMentee ? '/dashboard' : '/';
-  const dash = s.role === 'mentor' ? '/mentor' : s.role === 'admin' ? '/admin' : '/dashboard';
+  const dash = s.role === 'mentor' ? '/mentor' : '/dashboard';
 
   return (
     <header className="tn-header">

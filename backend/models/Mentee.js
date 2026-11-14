@@ -27,6 +27,15 @@ const MenteeSchema = new mongoose.Schema({
   aiProfile: { type: mongoose.Schema.Types.Mixed },
   aiProfileAt: { type: Date },
   aiProfileSource: { type: String, enum: ['gemini', 'rules'] },
+  aiProfileModel: { type: String },
+  // Latest AI card job on Render Workflows (when the pipeline is enabled)
+  aiJob: {
+    runId: String,
+    status: { type: String, enum: ['pending', 'running', 'succeeded', 'failed', 'canceled'] },
+    queuedAt: Date,
+    finishedAt: Date,
+    error: String,
+  },
   totalScore: { type: Number, default: 0 },
   // AI card v2: privacy controls (all opt-in) and a short mentor endorsement
   privacy: {

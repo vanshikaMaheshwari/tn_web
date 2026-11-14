@@ -5,7 +5,7 @@ import MentorApp from '@/components/mentor/MentorApp';
 
 function Inner() {
   const tab = useSearchParams().get('tab');
-  return <MentorApp tab={['missions', 'review'].includes(tab) ? tab : 'overview'} />;
+  return <MentorApp tab={['missions', 'review', 'modules', 'deck', 'events', 'inbox', 'automations'].includes(tab) ? tab : 'overview'} />;
 }
 
 export default function MentorPage() {

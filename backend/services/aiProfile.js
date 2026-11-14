@@ -1,7 +1,12 @@
 // AI profile generation: Gemini first, deterministic rules as a fallback so the
 // profile page always renders (no key, quota hit, network error, bad JSON).
 
-const GEMINI_MODEL = () => process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_MODEL = () => process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+// Tried in order when the main model is busy (503), rate-limited (429) or missing (404).
+const FALLBACK_MODELS = () =>
+  (process.env.GEMINI_FALLBACK_MODELS || 'gemini-flash-latest,gemini-3.5-flash-lite')
+    .split(',').map((m) => m.trim()).filter(Boolean);
+const RETRYABLE = new Set([404, 408, 429, 500, 502, 503, 504]);
 
 const BADGE_ICONS = ['flame', 'target', 'code', 'rocket', 'trophy', 'book', 'zap', 'star', 'clock', 'brain'];
 
@@ -95,12 +100,10 @@ function normalize(p, stats) {
   };
 }
 
-async function generateWithGemini(stats) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY not set');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL()}:generateContent`;
+async function callGemini(model, key, stats) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
+  const timer = setTimeout(() => controller.abort(), 30000);
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -115,13 +118,40 @@ async function generateWithGemini(stats) {
         },
       }),
     });
-    if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    if (!res.ok) {
+      const err = new Error(`Gemini ${res.status} (${model}): ${(await res.text()).slice(0, 160)}`);
+      err.status = res.status;
+      err.retryable = RETRYABLE.has(res.status);
+      throw err;
+    }
     const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.map((x) => x.text).join('') || '';
+    const text = data?.candidates?.[0]?.content?.parts?.map((x) => x.text || '').join('') || '';
     return normalize(JSON.parse(text), stats);
+  } catch (err) {
+    if (err.name === 'AbortError' || err instanceof SyntaxError) err.retryable = true;
+    throw err;
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Main model first, then each fallback model. Throws the last error if all fail
+// (the Render Workflows task relies on that to retry with backoff).
+async function generateWithGemini(stats) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY not set');
+  const models = [GEMINI_MODEL(), ...FALLBACK_MODELS()].filter((m, i, a) => a.indexOf(m) === i);
+  let lastErr;
+  for (const model of models) {
+    try {
+      return { profile: await callGemini(model, key, stats), model };
+    } catch (err) {
+      lastErr = err;
+      if (!err.retryable) break;
+      console.warn(`[aiProfile] ${model} unavailable (${err.status || err.name}), trying next model`);
+    }
+  }
+  throw lastErr;
 }
 
 // Deterministic generator with the same output shape.
@@ -188,11 +218,12 @@ function generateWithRules(stats) {
 
 async function generateProfile(stats) {
   try {
-    return { profile: await generateWithGemini(stats), source: 'gemini' };
+    const { profile, model } = await generateWithGemini(stats);
+    return { profile, source: 'gemini', model };
   } catch (err) {
     if (process.env.GEMINI_API_KEY) console.warn('[aiProfile] Gemini failed, using rules:', err.message);
-    return { profile: generateWithRules(stats), source: 'rules' };
+    return { profile: generateWithRules(stats), source: 'rules', model: null };
   }
 }
 
-module.exports = { generateProfile, generateWithRules, verifyEvidence };
+module.exports = { generateProfile, generateWithGemini, generateWithRules, verifyEvidence, GEMINI_MODEL, FALLBACK_MODELS, RETRYABLE };

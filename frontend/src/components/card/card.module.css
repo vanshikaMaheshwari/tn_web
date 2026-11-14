@@ -72,6 +72,10 @@
 .sticker { background: var(--tn-yellow); border: 2.5px solid var(--tn-navy); border-radius: 16px; box-shadow: 3px 3px 0 var(--tn-navy); padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
 .lockedBadge { border: 2.5px dashed #9fb4d8; border-radius: 16px; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; color: var(--tn-muted); }
 
+/* ---------- pipeline status ---------- */
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--tn-blue); box-shadow: 0 0 0 0 rgba(47,107,255,.6); animation: ping 1.4s ease-out infinite; flex: none; }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(47,107,255,.6); } 100% { box-shadow: 0 0 0 8px rgba(47,107,255,0); } }
+
 /* ---------- toggles ---------- */
 .toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 14px; min-height: 40px; width: 100%; background: none; border: 0; padding: 0; color: var(--tn-navy); cursor: pointer; font-family: var(--font-body); text-align: left; }
 .switch { width: 44px; height: 24px; border-radius: 12px; border: 2px solid var(--tn-navy); background: #e8f0ff; position: relative; flex: none; transition: background .2s; }
@@ -81,6 +85,6 @@
 .toggle:focus-visible .switch { outline: 3px solid var(--tn-cyan); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .holo, .spin, .bob, .pulse, .twinkle { animation: none; }
+  .holo, .spin, .bob, .pulse, .twinkle, .dot { animation: none; }
   .inner { transition: none; }
 }

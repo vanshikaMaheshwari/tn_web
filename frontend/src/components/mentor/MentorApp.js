@@ -3,9 +3,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import AiCard from '@/components/card/AiCard';
+import ModulesEditor from '@/components/mentor/ModulesEditor';
+import CommandDeck from '@/components/core/CommandDeck';
+import EventsManager from '@/components/core/EventsManager';
+import Inbox from '@/components/core/Inbox';
+import Automations from '@/components/automations/Automations';
+import WeeklyReport from '@/components/automations/WeeklyReport';
 import logo from '@/assets/logo.png';
 import {
-  addMentee, createQuiz, createResource, deleteResource, formatDate, formatDateTime, getMentorMe, getMyPrograms,
+  addMentee, createQuiz, createResource, deleteResource, formatDate, formatDateTime, getMentorMe, getMyPrograms, getAllPrograms, getModules, getAdminStats, getCohortReport,
   getProgramMentees, getProgramResources, getUnverifiedProjects, logout, resetMenteePassword, verifyProject,
   endorseMentee, getMenteeCard,
 } from '@/lib/api';
@@ -19,8 +25,16 @@ const TABS = [
   ['overview', 'Overview', '/mentor'],
   ['crew', 'Crew (mentees)', '/mentor/crew'],
   ['missions', 'Missions (resources)', '/mentor?tab=missions'],
+  ['modules', 'Modules', '/mentor?tab=modules'],
   ['review', 'Review queue', '/mentor?tab=review'],
 ];
+const CORE_TABS = [
+  ['deck', 'Command deck', '/mentor?tab=deck'],
+  ['events', 'Events', '/mentor?tab=events'],
+  ['inbox', 'Inbox', '/mentor?tab=inbox'],
+  ['automations', 'Automations', '/mentor?tab=automations'],
+];
+const CORE_ONLY = CORE_TABS.map((t) => t[0]);
 
 export function menteeStatus(m) {
   if (!m.lastActiveDate) return 'inactive';
@@ -52,13 +66,18 @@ export default function MentorApp({ tab, menteeId }) {
   const [queue, setQueue] = useState([]);
   const [error, setError] = useState('');
   const [pass, setPass] = useState(null);
+  const [openQs, setOpenQs] = useState(0);
+  const [report, setReport] = useState(undefined);
 
   useEffect(() => {
     if (!ready) return;
     (async () => {
       try {
-        const [me, progs] = await Promise.all([getMentorMe(), getMyPrograms()]);
+        const me = await getMentorMe();
+        // Core team can manage every cohort; regular mentors see their own.
+        const progs = me.isCoreTeam ? await getAllPrograms() : await getMyPrograms();
         setMentor(me);
+        if (me.isCoreTeam) getAdminStats().then((st) => setOpenQs(st.inbox?.openQueries || 0)).catch(() => {});
         setPrograms(progs);
         let saved = '';
         try { saved = localStorage.getItem('tn_mentor_program') || ''; } catch { /* ignore */ }
@@ -75,6 +94,7 @@ export default function MentorApp({ tab, menteeId }) {
       setResources(r);
       setQueue(q.unverifiedProjects || []);
     } catch (e) { toast(e.message, 'error'); }
+    getCohortReport(pid).then(setReport).catch(() => setReport(null));
   }, [pid, toast]);
 
   useEffect(() => { loadProgram(); }, [loadProgram]);
@@ -121,12 +141,30 @@ export default function MentorApp({ tab, menteeId }) {
             </button>
           ))}
         </nav>
+        {mentor?.isCoreTeam && (
+          <nav aria-label="Core team">
+            <span className="tn-mono" style={{ color: 'var(--tn-yellow)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 4px 2px' }}><Icon name="shield" size={14} color="var(--tn-yellow)" /> core team only</span>
+            {CORE_TABS.map(([key, label, href]) => (
+              <button key={key} className={tab === key ? 'active' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => router.push(href)}>
+                {label}
+                {key === 'inbox' && openQs > 0 && <span style={{ background: 'var(--tn-yellow)', color: 'var(--tn-navy)', borderRadius: 999, padding: '0 9px', fontWeight: 800, fontSize: 12, lineHeight: '22px' }}>{openQs}</span>}
+              </button>
+            ))}
+          </nav>
+        )}
         <p className="tn-hand" style={{ fontSize: 22, color: '#8ec5ff', lineHeight: 1.2, marginTop: 'auto' }}>“Teach to learn twice.”</p>
         <button className="tn-btn sm ghost-light" onClick={() => { logout(); router.push('/login?role=mentor'); }}><Icon name="logout" size={16} color="#fff" /> Log out</button>
       </aside>
 
       <main className="tn-shell-main">
-        {!program ? <div className="tn-empty">Once the admin assigns you a cohort, it shows up here.</div> : (
+        {CORE_ONLY.includes(tab) ? (
+          !mentor ? <Loading rows={3} />
+            : !mentor.isCoreTeam ? <div className="tn-empty">This section is for the TechNeeds core team. Ask a core-team member if you need access.</div>
+              : tab === 'deck' ? <CommandDeck me={mentor} />
+                : tab === 'events' ? <EventsManager />
+                  : tab === 'automations' ? <Automations />
+                    : <Inbox onCount={setOpenQs} />
+        ) : !program ? <div className="tn-empty">Once the core team assigns you a cohort, it shows up here.</div> : (
           <>
             {tab === 'overview' && (
               <>
@@ -146,8 +184,9 @@ export default function MentorApp({ tab, menteeId }) {
                   <Stat label="need_a_nudge" value={stats.nudge} />
                   <Stat label="to_review" value={stats.myQueue.length} bg="var(--tn-yellow)" />
                 </section>
+                {report !== undefined && <WeeklyReport report={report} />}
                 <section className="tn-row" style={{ gap: 26 }}>
-                  <div style={{ flex: '1 1 420px', minWidth: 0 }}><MissionBuilder programId={pid} onCreated={loadProgram} /></div>
+                  <div style={{ flex: '1 1 420px', minWidth: 0 }}><MissionBuilder key={pid} programId={pid} onCreated={loadProgram} /></div>
                   <div style={{ flex: '1 1 420px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 26 }}>
                     <ReviewQueue items={stats.myQueue.slice(0, 3)} onDone={loadProgram} compact />
                     <ResourceHealth resources={resources} />
@@ -164,11 +203,12 @@ export default function MentorApp({ tab, menteeId }) {
                   <h1 style={{ fontSize: 'clamp(32px, 4vw, 44px)' }}>Missions</h1>
                 </div>
                 <section className="tn-row" style={{ gap: 26 }}>
-                  <div style={{ flex: '1 1 420px', minWidth: 0 }}><MissionBuilder programId={pid} onCreated={loadProgram} /></div>
+                  <div style={{ flex: '1 1 420px', minWidth: 0 }}><MissionBuilder key={pid} programId={pid} onCreated={loadProgram} /></div>
                   <div style={{ flex: '1 1 420px', minWidth: 0 }}><MissionList resources={resources} onChange={loadProgram} /></div>
                 </section>
               </>
             )}
+            {tab === 'modules' && <ModulesEditor program={program} onChange={loadProgram} />}
             {tab === 'review' && (
               <>
                 <div className="tn-stack" style={{ gap: 6 }}>
@@ -203,6 +243,9 @@ function MissionBuilder({ programId, onCreated }) {
   const [f, setF] = useState({ title: '', url: '', description: '', deadline: '', startTime: '', maxScore: '' });
   const [qs, setQs] = useState([emptyQ()]);
   const [busy, setBusy] = useState(false);
+  const [mods, setMods] = useState([]);
+  const [place, setPlace] = useState('');
+  useEffect(() => { getModules(programId).then((d) => setMods(d.modules || [])).catch(() => setMods([])); }, [programId]);
   const total = qs.reduce((s, q) => s + (Number(q.marks) || 0), 0);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const setQ = (i, patch) => setQs(qs.map((q, j) => (j === i ? { ...q, ...patch } : q)));
@@ -212,12 +255,14 @@ function MissionBuilder({ programId, onCreated }) {
     setBusy(true);
     try {
       const toIso = (v) => (v ? new Date(v).toISOString() : undefined);
+      const [module, subtopic] = place ? place.split(':') : [];
+      const where = module ? { module, subtopic: subtopic || undefined } : {};
       if (type === 'quiz') {
         const clean = qs.filter((q) => q.questionText.trim() && q.options.filter((o) => o.trim()).length >= 2);
         if (!clean.length) throw new Error('Add at least one question with two options.');
-        await createQuiz({ title: f.title, description: f.description, program: programId, startTime: toIso(f.startTime), endTime: toIso(f.deadline), questions: clean });
+        await createQuiz({ title: f.title, description: f.description, program: programId, startTime: toIso(f.startTime), endTime: toIso(f.deadline), questions: clean, ...where });
       } else {
-        await createResource({ title: f.title, type, url: f.url || undefined, description: f.description, deadline: toIso(f.deadline), maxScore: Number(f.maxScore) || (type === 'video' ? 20 : 100), program: programId });
+        await createResource({ title: f.title, type, url: f.url || undefined, description: f.description, deadline: toIso(f.deadline), maxScore: Number(f.maxScore) || (type === 'video' ? 20 : 100), program: programId, ...where });
       }
       toast(`${type === 'quiz' ? 'Quiz' : type === 'video' ? 'Video' : 'Project'} mission launched`);
       setF({ title: '', url: '', description: '', deadline: '', startTime: '', maxScore: '' });
@@ -270,6 +315,19 @@ function MissionBuilder({ programId, onCreated }) {
           <button type="button" className="tn-btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => setQs([...qs, emptyQ()])}><Icon name="plus" size={16} /> Add question</button>
         </div>
       )}
+      <div className="tn-field">
+        <label htmlFor="mpl">Where does it go?</label>
+        <select id="mpl" className="tn-select" value={place} onChange={(e) => setPlace(e.target.value)}>
+          <option value="">Not in a module (shows under “More missions”)</option>
+          {mods.map((m, mi) => (
+            <optgroup key={m._id} label={`${mi + 1}. ${m.title}`}>
+              <option value={`${m._id}:`}>{m.title}, no sub-topic</option>
+              {m.subtopics.map((st, si) => <option key={st._id} value={`${m._id}:${st._id}`}>{mi + 1}.{si + 1} {st.title}</option>)}
+            </optgroup>
+          ))}
+        </select>
+        {mods.length === 0 && <span className="tn-muted" style={{ fontSize: 12 }}>Tip: create modules in the Modules tab to organise missions.</span>}
+      </div>
       <div className="tn-between">
         <span className="tn-mono" style={{ fontSize: 13, color: 'var(--tn-ink-2)' }}>max_score = {type === 'quiz' ? total : f.maxScore || (type === 'video' ? 20 : 100)}</span>
         <button className="tn-btn primary" disabled={busy}>{busy ? 'Launching…' : 'Launch mission'}</button>

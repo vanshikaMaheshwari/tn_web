@@ -8,7 +8,6 @@ import { login, session } from '@/lib/api';
 const ROLES = {
   mentee: { label: 'Mentee', idLabel: 'Enrollment number', placeholder: 'TN-WEBD-0004', mono: true, dest: '/dashboard' },
   mentor: { label: 'Mentor', idLabel: 'Email', placeholder: 'you@igdtuw.ac.in', mono: false, dest: '/mentor' },
-  admin: { label: 'Admin', idLabel: 'Admin email', placeholder: 'admin@techneeds.dev', mono: false, dest: '/admin' },
 };
 
 function LoginInner() {
@@ -53,7 +52,7 @@ function LoginInner() {
           </p>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-          {Object.entries({ admin: 'command deck', mentor: 'mission control', mentee: 'launchpad' }).map(([r, d]) => (
+          {Object.entries({ mentee: 'launchpad', mentor: 'mission control' }).map(([r, d]) => (
             <span key={r} className="tn-mono" style={{ fontSize: 13, padding: '6px 12px', border: `2px solid ${r === role ? 'var(--tn-yellow)' : '#8ec5ff'}`, borderRadius: 999, color: r === role ? 'var(--tn-yellow)' : '#cfe0ff' }}>
               {r} → {d}
             </span>
@@ -67,7 +66,7 @@ function LoginInner() {
             <h2 style={{ fontSize: 34 }}>Log in</h2>
             <span className="tn-hand" style={{ fontSize: 22, color: 'var(--tn-blue-ink)' }}>pick your role first ↓</span>
           </div>
-          <div role="tablist" aria-label="Role" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, background: 'var(--tn-paper)', border: '2px solid var(--tn-navy)', borderRadius: 14, padding: 5 }}>
+          <div role="tablist" aria-label="Role" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, background: 'var(--tn-paper)', border: '2px solid var(--tn-navy)', borderRadius: 14, padding: 5 }}>
             {Object.entries(ROLES).map(([key, r]) => (
               <button
                 key={key}
@@ -96,9 +95,7 @@ function LoginInner() {
           <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--tn-ink-2)' }}>
             {role === 'mentee'
               ? 'Your mentor shares your enrollment number and first password. Forgot it? Ask them to reset it from Mission control.'
-              : role === 'mentor'
-                ? 'Mentor accounts are created by the TechNeeds admin, who shares your password once.'
-                : 'Admin credentials are set on the server (ADMIN_EMAIL / ADMIN_PASSWORD).'}
+              : 'Mentor accounts are created by the TechNeeds core team. Core team? Log in here: your admin tools appear inside Mission Control.'}
           </p>
         </form>
       </section>

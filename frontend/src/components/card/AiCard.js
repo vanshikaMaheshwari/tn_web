@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import Icon from '@/components/ui/Icon';
+import Tour from '@/components/onboarding/Tour';
 import AvatarBot from './AvatarBot';
 import s from './card.module.css';
 
@@ -192,17 +193,31 @@ function Forecast({ f, who }) {
   );
 }
 
+// "gemini-3.5-flash" -> "3.5 Flash", "gemini-flash-latest" -> "Flash"
+function modelLabel(model) {
+  if (!model) return '3.5 Flash';
+  return model.replace(/^gemini-/, '').replace(/-latest$/, '').split('-')
+    .map((w) => (/^\d/.test(w) ? w : w[0].toUpperCase() + w.slice(1))).join(' ');
+}
+
 function Readout({ c, mode, onRefresh, refreshing, interestsSlot }) {
   const who = mode === 'self' ? 'you' : c.me.name.split(' ')[0];
+  const pending = ['pending', 'running'].includes(c.aiJob?.status);
   return (
     <div style={{ ...card, padding: 26 }}>
       <div className="tn-between">
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Icon name="spark" size={20} color="var(--tn-blue)" />{label('AI READ-OUT')}</span>
         <span className="tn-mono" style={{ fontSize: 12, color: 'var(--tn-muted)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          {c.aiSource === 'gemini' ? 'Gemini 3.5 Flash' : 'Rules engine'} · {ago(c.aiGeneratedAt)}
+          {pending ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--tn-blue-ink)', fontWeight: 700 }} role="status">
+              <span className={s.dot} /> Render Workflows · generating with Gemini…
+            </span>
+          ) : (
+            <>{c.aiSource === 'gemini' ? `Gemini ${modelLabel(c.aiModel)}` : 'Rules engine'} · {ago(c.aiGeneratedAt)}{c.aiPipeline === 'render-workflows' ? ' · via Render Workflows' : ''}</>
+          )}
           {onRefresh && (
-            <button onClick={onRefresh} disabled={refreshing} className="tn-mono" style={{ border: 0, background: 'none', color: 'var(--tn-blue-ink)', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 32 }}>
-              <Icon name="refresh" size={13} color="var(--tn-blue-ink)" /> {refreshing ? 'thinking…' : 'refresh'}
+            <button onClick={onRefresh} disabled={refreshing || pending} className="tn-mono" style={{ border: 0, background: 'none', color: 'var(--tn-blue-ink)', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 32 }}>
+              <Icon name="refresh" size={13} color="var(--tn-blue-ink)" /> {refreshing ? 'queuing…' : 'refresh'}
             </button>
           )}
         </span>
@@ -210,7 +225,7 @@ function Readout({ c, mode, onRefresh, refreshing, interestsSlot }) {
       <h1 style={{ fontSize: 'clamp(30px, 3.4vw, 40px)', lineHeight: 1.08, letterSpacing: '-0.02em' }}>{c.ai.headline}</h1>
       <p style={{ margin: 0, fontSize: 17, lineHeight: 1.75, color: 'var(--tn-ink-2)' }}><Evidence text={c.ai.summary} facts={c.facts} /></p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--tn-muted)' }}>
-        <Icon name="check" size={16} color="var(--tn-muted)" /> Every highlighted claim is checked against real activity, so the AI can’t make things up.
+        <mark className={s.ev} style={{ fontSize: 12 }}>like this</mark> = a fact checked against your real activity. Anything the AI can’t back up is not highlighted.
       </div>
       {interestsSlot}
       {mode !== 'public' && <Forecast f={c.forecast} who={who} />}
@@ -523,21 +538,107 @@ function SharePanel({ c, onPrivacy, frontRef, toast }) {
 }
 
 // ------------------------------------------------------------------ //
+// Explanations: where each part comes from + what it means
+// ------------------------------------------------------------------ //
+
+const SOURCES = {
+  ai: { icon: '✦', text: 'AI writes this', bg: '#ece6ff' },
+  data: { icon: '▦', text: 'Calculated from your data', bg: 'var(--tn-sky)' },
+  mentor: { icon: '✍', text: 'Written by your mentor', bg: 'var(--tn-yellow)' },
+  you: { icon: '🔒', text: 'You control this', bg: '#C9F5DF' },
+};
+const SrcTag = ({ k }) => (
+  <span className="tn-mono" title={SOURCES[k].text} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, background: SOURCES[k].bg, border: '2px solid var(--tn-navy)', borderRadius: 999, padding: '1px 9px', whiteSpace: 'nowrap', color: 'var(--tn-navy)' }}>
+    <span aria-hidden="true">{SOURCES[k].icon}</span>{SOURCES[k].text}
+  </span>
+);
+
+// Section meta, keyed by id. "means" is written for the mentee (self mode).
+const SECTION = {
+  devid: { title: 'Dev ID card', src: ['data', 'ai'], means: 'Your shareable ID. Level, points and badges are counted from your missions; the robot avatar is drawn from the interests you picked. Tap it to flip.' },
+  readout: { title: 'AI read-out & rank forecast', src: ['ai', 'data'], means: 'Gemini writes a short summary of your progress. Every yellow-marked phrase is a real fact from your activity. The forecast shows the missions that would move you up the board.' },
+  constellation: { title: 'Growth constellation', src: ['data'], means: 'Each star is a mission. Yellow = done, glowing blue = do next, dashed = missed or locked.' },
+  skills: { title: 'Skill DNA', src: ['data'], means: 'Five scores out of 100, based on what you finished this week. The grey tick is the cohort average, so you can see where you’re ahead.' },
+  missions: { title: 'Next best missions', src: ['ai', 'data'], means: 'The missions that help you most right now, with the reason why. The top one is highlighted.' },
+  badges: { title: 'Badges', src: ['data'], means: 'Stickers unlock automatically when you hit milestones. Locked ones show what to do next.' },
+  journey: { title: 'Weekly journey', src: ['data'], means: 'Points you earned each week. Flags mark milestones like your first project.' },
+  mentor: { title: 'Mentor’s take', src: ['mentor'], means: 'A one-line note from your mentor. It’s the only part written by a person, and recruiters see it too.' },
+  share: { title: 'Share & privacy', src: ['you'], means: 'Nothing is public until you switch it on. You choose whether your rank shows, and can turn it off any time.' },
+};
+
+function Sec({ id, n, mode, children, style }) {
+  const m = SECTION[id];
+  return (
+    <div data-tour={`card-${id}`} style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, ...style }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--tn-navy)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, flex: 'none' }}>{n}</span>
+        <b style={{ fontSize: 14 }}>{m.title}</b>
+        {m.src.map((k) => <SrcTag key={k} k={k} />)}
+      </div>
+      {children}
+      {mode !== 'public' && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--tn-ink-2)' }}><b>What it means:</b> {m.means}</p>}
+    </div>
+  );
+}
+
+function CardGuide({ onTour, mode }) {
+  const ideas = [
+    ['✦', 'AI writes the words', 'Gemini writes the summary and tips. It never invents your numbers.'],
+    ['▦', 'Numbers come from your data', 'Points, skills and badges are counted from missions you finished.'],
+    ['▮', 'Yellow = checked fact', <>Every <mark className={s.ev}>yellow phrase</mark> is pulled from your real activity.</>],
+    ['🔒', 'You control sharing', 'The card is private until you switch on the public link.'],
+  ];
+  return (
+    <section className="tn-card" style={{ background: 'var(--tn-paper)', borderStyle: 'dashed', padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className="tn-between" style={{ gap: 12 }}>
+        <div className="tn-stack" style={{ gap: 2 }}>
+          {label('HOW_TO_READ_THIS.md')}
+          <h2 style={{ fontSize: 24 }}>{mode === 'mentor' ? 'This AI card in 4 ideas' : 'Your AI card in 4 ideas'}</h2>
+        </div>
+        <button className="tn-btn sm primary" onClick={onTour}><Icon name="info" size={16} color="#fff" /> Show me around</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14 }}>
+        {ideas.map(([ic, t, d], i) => (
+          <div key={t} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <span aria-hidden="true" style={{ width: 32, height: 32, flex: 'none', borderRadius: 10, border: '2px solid var(--tn-navy)', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>{ic}</span>
+            <span className="tn-stack" style={{ gap: 2 }}><b style={{ fontSize: 14 }}>{i + 1}. {t}</b><span style={{ fontSize: 13, color: 'var(--tn-ink-2)', lineHeight: 1.45 }}>{d}</span></span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 12 }}>
+        <span className="tn-label">labels on each section:</span>
+        {Object.keys(SOURCES).map((k) => <SrcTag key={k} k={k} />)}
+      </div>
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------ //
 // Page composition
 // ------------------------------------------------------------------ //
 
 export default function AiCard({ c, mode = 'self', onRefresh, refreshing, interestsSlot, onPrivacy, onEndorse, toast }) {
   const frontRef = useRef(null);
+  const [tour, setTour] = useState(false);
+  // Numbering follows what's actually shown in this mode.
+  const order = ['devid', 'readout', 'constellation', 'skills', ...(mode === 'public' ? [] : ['missions']), 'badges', 'journey', 'mentor', ...(mode === 'self' ? ['share'] : [])];
+  const num = (id) => order.indexOf(id) + 1;
+  const showMentor = !!c.endorsement || mode !== 'public';
+  const tourKey = order.join(',') + showMentor;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tourSteps = useMemo(() => order.filter((id) => id !== 'mentor' || showMentor).map((id) => ({ id: `card-${id}`, title: `${num(id)}. ${SECTION[id].title}`, text: SECTION[id].means })), [tourKey]);
+  const closeTour = useCallback(() => setTour(false), []);
   const side = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <MentorTake c={c} mode={mode} onEndorse={onEndorse} />
-      {mode === 'self' && <SharePanel c={c} onPrivacy={onPrivacy} frontRef={frontRef} toast={toast} />}
+      {showMentor && <Sec id="mentor" n={num('mentor')} mode={mode}><MentorTake c={c} mode={mode} onEndorse={onEndorse} /></Sec>}
+      {mode === 'self' && <Sec id="share" n={num('share')} mode={mode}><SharePanel c={c} onPrivacy={onPrivacy} frontRef={frontRef} toast={toast} /></Sec>}
       {mode === 'public' && (
         <div style={{ ...card, padding: 22, gap: 8 }}>
           {label('ABOUT THIS CARD')}
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: 'var(--tn-ink-2)' }}>
             Generated by TechNeeds IGDTUW from real mentorship activity: missions, quizzes, projects and streaks. The learner chose to make it public.
           </p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{Object.keys(SOURCES).filter((k) => k !== 'you').map((k) => <SrcTag key={k} k={k} />)}</div>
           <Link href="/" className="tn-btn sm" style={{ alignSelf: 'flex-start' }}>Explore TechNeeds</Link>
         </div>
       )}
@@ -545,26 +646,27 @@ export default function AiCard({ c, mode = 'self', onRefresh, refreshing, intere
   );
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
+      {mode !== 'public' && <CardGuide mode={mode} onTour={() => setTour(true)} />}
       <section className={s.hero}>
-        <DevId c={c} frontRef={frontRef} />
-        <Readout c={c} mode={mode} onRefresh={onRefresh} refreshing={refreshing} interestsSlot={interestsSlot} />
+        <Sec id="devid" n={num('devid')} mode={mode}><DevId c={c} frontRef={frontRef} /></Sec>
+        <Sec id="readout" n={num('readout')} mode={mode}><Readout c={c} mode={mode} onRefresh={onRefresh} refreshing={refreshing} interestsSlot={interestsSlot} /></Sec>
       </section>
       <section className={s.rowWide}>
-        <Constellation c={c} mode={mode} />
-        <SkillBars c={c} />
+        <Sec id="constellation" n={num('constellation')} mode={mode}><Constellation c={c} mode={mode} /></Sec>
+        <Sec id="skills" n={num('skills')} mode={mode}><SkillBars c={c} /></Sec>
       </section>
       {mode === 'public' ? (
         <>
-          <section className={s.rowHalf}><Badges c={c} />{side}</section>
-          <section><Journey c={c} /></section>
+          <section className={s.rowHalf}><Sec id="badges" n={num('badges')} mode={mode}><Badges c={c} /></Sec>{side}</section>
+          <section><Sec id="journey" n={num('journey')} mode={mode}><Journey c={c} /></Sec></section>
         </>
       ) : (
         <>
-          <section className={s.rowHalf}><Missions c={c} mode={mode} /><Badges c={c} /></section>
-          <section className={s.rowWide}><Journey c={c} />{side}</section>
+          <section className={s.rowHalf}><Sec id="missions" n={num('missions')} mode={mode}><Missions c={c} mode={mode} /></Sec><Sec id="badges" n={num('badges')} mode={mode}><Badges c={c} /></Sec></section>
+          <section className={s.rowWide}><Sec id="journey" n={num('journey')} mode={mode}><Journey c={c} /></Sec>{side}</section>
         </>
       )}
+      <Tour steps={tourSteps} open={tour} onClose={closeTour} />
     </div>
   );
 }
-

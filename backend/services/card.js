@@ -5,6 +5,7 @@
 const Mentee = require('../models/Mentee');
 const { buildStats, DAY } = require('./menteeState');
 const { generateProfile, generateWithRules, verifyEvidence } = require('./aiProfile');
+const pipeline = require('./aiPipeline');
 
 const SKILLS = ['videos', 'quizzes', 'projects', 'consistency', 'punctuality'];
 const TYPE_SKILL = { video: 'videos', quiz: 'quizzes', project: 'projects' };
@@ -287,17 +288,43 @@ async function buildCard(menteeId, { mode = 'self', forceAi = false } = {}) {
   const { mentee, programs, timeline, resources, stats } = await buildStats(menteeId);
   const rows = toRows(resources);
 
-  // AI words (cached for 6h; v1 profiles without an archetype are upgraded)
+  // AI words (cached for 6h; v1 profiles without an archetype are upgraded).
+  // With Render Workflows enabled, generation is queued as a background run that
+  // retries on Gemini outages; meanwhile the card shows the cached or rules version.
   let ai = mentee.aiProfile;
   let aiSource = mentee.aiProfileSource || null;
   let aiAt = mentee.aiProfileAt || null;
-  const stale = !ai || !ai.archetype || (aiAt && Date.now() - aiAt.getTime() > 6 * 3600 * 1000);
-  if (mode === 'self' && (forceAi || stale)) {
+  let aiModel = mentee.aiProfileModel || ai?.model || null;
+  let aiJob = null;
+  const stale = !ai || !ai.archetype || (aiAt && Date.now() - new Date(aiAt).getTime() > 6 * 3600 * 1000);
+
+  const generateInline = async () => {
     const r = await generateProfile(stats);
-    ai = r.profile; aiSource = r.source; aiAt = new Date();
-    await Mentee.updateOne({ _id: mentee._id }, { $set: { aiProfile: ai, aiProfileAt: aiAt, aiProfileSource: aiSource } });
-  } else if (!ai || !ai.archetype) {
-    ai = generateWithRules(stats); aiSource = 'rules'; aiAt = new Date();
+    ai = { ...r.profile, model: r.model }; aiSource = r.source; aiAt = new Date(); aiModel = r.model;
+    await Mentee.updateOne({ _id: mentee._id }, { $set: { aiProfile: ai, aiProfileAt: aiAt, aiProfileSource: aiSource, aiProfileModel: aiModel } });
+  };
+
+  if (mode === 'self' && pipeline.enabled()) {
+    let job = await pipeline.refreshStatus(mentee);
+    const lastEnd = job?.finishedAt || job?.queuedAt;
+    const recentlyFailed = job?.status === 'failed' && lastEnd && Date.now() - new Date(lastEnd).getTime() < 10 * 60 * 1000;
+    const wantsGemini = forceAi || stale || (aiSource !== 'gemini' && !recentlyFailed);
+    if (wantsGemini && !pipeline.isActive(job)) {
+      try {
+        job = await pipeline.queueCard(mentee._id, { force: forceAi });
+      } catch (err) {
+        console.warn('[aiPipeline] could not queue on Render Workflows, generating inline:', err.message);
+        if (forceAi || stale) await generateInline();
+      }
+    }
+    aiJob = pipeline.jobView(job);
+  } else if (mode === 'self' && (forceAi || stale)) {
+    await generateInline();
+  } else if (mode === 'mentor') {
+    aiJob = pipeline.jobView(mentee.aiJob);
+  }
+  if (!ai || !ai.archetype) {
+    ai = generateWithRules(stats); aiSource = 'rules'; aiAt = new Date(); aiModel = null;
   }
   // Re-verify evidence against today's facts (numbers may have moved since generation)
   ai = { ...ai, summary: verifyEvidence(ai.summary, stats.facts) };
@@ -348,6 +375,9 @@ async function buildCard(menteeId, { mode = 'self', forceAi = false } = {}) {
       growthAreas: ai.growthAreas || [],
     },
     aiSource,
+    aiModel: aiSource === 'gemini' ? aiModel : null,
+    aiJob,
+    aiPipeline: pipeline.enabled() ? 'render-workflows' : 'inline',
     aiGeneratedAt: aiAt,
     facts: stats.facts,
     skills,

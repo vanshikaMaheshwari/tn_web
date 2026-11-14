@@ -2,6 +2,7 @@
 // Used by the mentee routes, the AI card builder and the mentor card view.
 const Mentee = require('../models/Mentee');
 const Quiz = require('../models/Quiz');
+const Module = require('../models/Module');
 
 const DAY = 86400000;
 
@@ -57,6 +58,7 @@ async function loadMenteeState(menteeId) {
     return { _id: program._id, name: program.name, description: program.description, resources };
   });
 
+  await attachModules(programs);
   return { mentee, programs, totalScore };
 }
 
@@ -196,4 +198,48 @@ function computeFacts(stats, resources, mentee) {
   return { factList: list, facts: list.map((f) => f.text), rhythm, topTag: top ? top[0] : null };
 }
 
-module.exports = { loadMenteeState, buildStats, calculateRank, computeFacts, DAY };
+// Builds program.modules (Module → sub-topics → resource ids) and applies
+// "lock until previous sub-topic is complete" to resource statuses.
+async function attachModules(programs) {
+  if (!programs.length) return;
+  const modules = await Module.find({ program: { $in: programs.map((p) => p._id) } }).sort({ order: 1, createdAt: 1 }).lean();
+  const finished = (r) => r.status === 'completed' || r.status === 'pending_review';
+  for (const program of programs) {
+    const mods = modules.filter((m) => String(m.program) === String(program._id));
+    const byId = new Map(program.resources.map((r) => [String(r._id), r]));
+    const placed = new Set();
+    let prevDone = true;
+    let currentFound = false;
+    program.modules = mods.map((m) => {
+      const subs = [...m.subtopics].sort((a, b) => a.order - b.order).map((st) => {
+        const res = program.resources.filter((r) => String(r.module || '') === String(m._id) && String(r.subtopic || '') === String(st._id));
+        res.forEach((r) => placed.add(String(r._id)));
+        const done = res.length > 0 && res.every(finished);
+        const locked = st.lockUntilPrevious && !prevDone && !done;
+        if (locked) res.forEach((r) => { if (!finished(r)) { r.status = 'locked'; r.lockedReason = 'previous_subtopic'; } });
+        let state = done ? 'done' : locked ? 'locked' : 'open';
+        if (state === 'open' && !currentFound && res.length) { state = 'current'; currentFound = true; }
+        if (res.length) prevDone = done;
+        return {
+          _id: st._id, title: st.title, description: st.description || '', state,
+          lockUntilPrevious: !!st.lockUntilPrevious,
+          resourceIds: res.map((r) => String(r._id)),
+          done: res.filter(finished).length, total: res.length,
+        };
+      });
+      const loose = program.resources.filter((r) => String(r.module || '') === String(m._id) && !r.subtopic);
+      loose.forEach((r) => placed.add(String(r._id)));
+      const all = subs.flatMap((x) => x.resourceIds).concat(loose.map((r) => String(r._id)));
+      const doneN = all.filter((id) => finished(byId.get(id))).length;
+      return {
+        _id: m._id, title: m.title, description: m.description || '', order: m.order,
+        startsAt: m.startsAt || null, endsAt: m.endsAt || null,
+        subtopics: subs, looseResourceIds: loose.map((r) => String(r._id)),
+        done: doneN, total: all.length, pct: all.length ? Math.round((doneN / all.length) * 100) : 0,
+      };
+    });
+    program.unplacedResourceIds = program.resources.filter((r) => !placed.has(String(r._id))).map((r) => String(r._id));
+  }
+}
+
+module.exports = { attachModules, loadMenteeState, buildStats, calculateRank, computeFacts, DAY };

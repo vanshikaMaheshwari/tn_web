@@ -1,4 +1,4 @@
-# Render Blueprint: deploys the API and the web app.
+# Render Blueprint: deploys the API, the AI workflow service and the web app.
 # In Render: New + → Blueprint → pick this repo. Fill the env vars marked sync: false.
 services:
   - type: web
@@ -13,16 +13,42 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true
-      - key: ADMIN_EMAIL
-        sync: false
-      - key: ADMIN_PASSWORD
+      # Core team (hidden admin): comma-separated mentor emails
+      - key: ADMIN_EMAILS
         sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.5-flash
       - key: CORS_ORIGIN
         sync: false
+      - key: NODE_VERSION
+        value: "22"
+      # Render Workflows: an API key (Account settings → API Keys) and the workflow's slug
+      - key: RENDER_API_KEY
+        sync: false
+      - key: AI_WORKFLOW_SLUG
+        value: techneeds-ai
+      # Shared secret for the scheduled automations (GitHub Actions → /api/cron/:task)
+      - key: CRON_SECRET
+        generateValue: true
+
+  # AI pipeline: each learner's AI card is a task run with automatic retries.
+  - type: workflow
+    name: techneeds-ai
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node workflows/index.js
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
+      - key: NODE_VERSION
+        value: "22"
 
   - type: web
     name: techneeds-web

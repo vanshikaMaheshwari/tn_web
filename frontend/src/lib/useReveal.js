@@ -9,7 +9,7 @@ export function useReveal(deps = []) {
     let ctx;
     import('gsap').then(({ gsap }) => {
       ctx = gsap.context(() => {
-        gsap.from('.tn-reveal', { y: 24, opacity: 0, duration: 0.5, stagger: 0.07, ease: 'power2.out', clearProps: 'all' });
+        gsap.from('.tn-reveal', { y: 24, opacity: 0, duration: 0.5, stagger: 0.07, ease: 'power2.out', clearProps: 'transform,opacity' });
       });
     });
     return () => ctx && ctx.revert();

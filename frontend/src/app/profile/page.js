@@ -1,7 +1,7 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/useAuth';
-import { getCard, refreshCard, updateInterests, updatePrivacy } from '@/lib/api';
+import { getCard, getCardAiStatus, refreshCard, updateInterests, updatePrivacy } from '@/lib/api';
 import { ErrorBox, Loading } from '@/components/ui/Brand';
 import { useToast } from '@/components/ui/Toast';
 import AiCard from '@/components/card/AiCard';
@@ -22,12 +22,43 @@ export default function ProfilePage() {
 
   useEffect(() => { if (ready) load(); }, [ready, load]);
 
+  // While a Render Workflows run is generating the card, poll its status every 3s
+  // (up to ~4 min, covering Render's retries), then reload the card.
+  const jobStatus = c?.aiJob?.status;
+  const polls = useRef(0);
+  useEffect(() => {
+    if (!['pending', 'running'].includes(jobStatus)) { polls.current = 0; return undefined; }
+    const t = setTimeout(async () => {
+      polls.current += 1;
+      try {
+        const st = await getCardAiStatus();
+        const s2 = st.job?.status;
+        if (s2 === 'succeeded') {
+          setC(await getCard());
+          toast('Fresh insights from Gemini, generated on Render Workflows');
+        } else if (s2 === 'failed' || s2 === 'canceled' || polls.current >= 80) {
+          setC((x) => ({ ...x, aiJob: { ...(st.job || x.aiJob), status: s2 === 'failed' ? 'failed' : 'canceled' } }));
+          toast('Gemini is busy right now, so the card is showing the rules-engine version. Try refresh later.', 'error');
+        } else if (s2 && s2 !== jobStatus) {
+          setC((x) => ({ ...x, aiJob: st.job }));
+        } else {
+          setC((x) => ({ ...x })); // re-arm the poll
+        }
+      } catch {
+        setC((x) => ({ ...x }));
+      }
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [c, jobStatus, toast]);
+
   const refresh = useCallback(async () => {
     setBusy(true);
     try {
       const r = await refreshCard();
       setC(r);
-      toast(r.cooldown ? 'Insights were refreshed a moment ago. Try again in a minute.' : 'Fresh insights generated');
+      if (r.cooldown) toast('Insights were refreshed a moment ago. Try again in a minute.');
+      else if (['pending', 'running'].includes(r.aiJob?.status)) toast('Queued on Render Workflows. Your card updates in a few seconds.');
+      else toast('Fresh insights generated');
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }, [toast]);
 
