@@ -14,6 +14,7 @@ const ReminderSchema = new mongoose.Schema({
     maxScore: Number,
   }],
   runId: String,
+  via: { type: String, enum: ['render-workflows', 'inline'], default: 'inline' },
 }, { timestamps: true });
 
 ReminderSchema.index({ mentee: 1, day: 1 }, { unique: true });

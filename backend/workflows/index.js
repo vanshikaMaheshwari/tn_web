@@ -107,7 +107,7 @@ const deadlineDigest = task(
   async function deadlineDigest(ctx, options = {}) {
     await connect();
     const hours = Math.max(6, Math.min(Number(options.hours) || 48, 168));
-    return insights.runDeadlineDigest({ hours, programId: options.programId || null, runId: options.runId || null });
+    return insights.runDeadlineDigest({ hours, programId: options.programId || null, runId: options.runId || null, via: 'render-workflows' });
   }
 );
 
@@ -138,7 +138,7 @@ const weeklyCohortReport = task(
     const ids = options.programId ? [String(options.programId)] : await insights.programIds();
     const reports = [];
     for (const id of ids) {
-      const report = await insights.buildCohortReport(id, { runId: options.runId || null });
+      const report = await insights.buildCohortReport(id, { runId: options.runId || null, via: 'render-workflows' });
       reports.push({ reportId: String(report._id), program: report.programName });
     }
     // Chain one summary subtask per report; they run in parallel and retry on their own.

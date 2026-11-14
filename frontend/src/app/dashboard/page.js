@@ -196,7 +196,7 @@ export default function Launchpad() {
             <div className="tn-card" style={{ background: 'var(--tn-orange-bg)', display: 'flex', flexDirection: 'column', gap: 10 }} aria-label="Today's reminders">
               <div className="tn-between" style={{ gap: 8 }}>
                 <span className="tn-mono" style={{ fontSize: 12, fontWeight: 700 }}>todays_reminders</span>
-                <span className="tn-mono" style={{ fontSize: 11, color: 'var(--tn-ink-2)' }} title="Generated each morning by a Render Workflows task">⚙ daily digest · Render Workflows</span>
+                <span className="tn-mono" style={{ fontSize: 11, color: 'var(--tn-ink-2)' }} title="Generated each morning by the daily digest job">⚙ daily digest{reminders.via === 'render-workflows' ? ' · Render Workflows' : ''}</span>
               </div>
               {reminders.items.slice(0, 4).map((it) => {
                 const l = timeLeft(it.dueAt);

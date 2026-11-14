@@ -72,11 +72,13 @@ export default function Automations() {
       <div className="tn-stack" style={{ gap: 6 }}>
         <span className="tn-eyebrow">core@techneeds:~$ render workflows ls</span>
         <h1 style={{ fontSize: 'clamp(32px, 4vw, 44px)' }}>Automations</h1>
-        <span style={{ fontSize: 15, color: 'var(--tn-ink-2)', maxWidth: 780 }}>Background jobs that run on <b>Render Workflows</b>: each one is a task with its own retries, and Render spins up compute only while it runs.</span>
+        <span style={{ fontSize: 15, color: 'var(--tn-ink-2)', maxWidth: 780 }}>{onRender
+          ? <>Background jobs that run on <b>Render Workflows</b>: each one is a task with its own retries, and Render spins up compute only while it runs.</>
+          : <>Background jobs for the cohort. They are built as <b>Render Workflows</b> tasks; until the workflow service is deployed, they run inside the API (same code, no automatic retries).</>}</span>
       </div>
 
       <section className="tn-navy" style={{ padding: '18px 22px', borderRadius: 20, boxShadow: '5px 5px 0 var(--tn-blue)', display: 'flex', alignItems: 'stretch', gap: 8, flexWrap: 'wrap' }} aria-label="How automations run">
-        {[['Schedule', 'GitHub Actions · daily / weekly'], ['TechNeeds API', 'checks the secret, queues the run'], ['Render Workflows', 'runs the task, retries on failure'], ['MongoDB', 'reminders + reports saved'], ['Launchpad + Mission control', 'what students & mentors see']].map(([t, d], i, a) => (
+        {[['Schedule', 'GitHub Actions · daily / weekly'], ['TechNeeds API', onRender ? 'checks the secret, queues the run' : 'checks the secret'], onRender ? ['Render Workflows', 'runs the task, retries on failure'] : ['Runs inline in the API', 'Render Workflows not deployed yet'], ['MongoDB', 'reminders + reports saved'], ['Launchpad + Mission control', 'what students & mentors see']].map(([t, d], i, a) => (
           <span key={t} style={{ display: 'contents' }}>
             <span style={{ flex: '1 1 0', minWidth: 120, display: 'flex', flexDirection: 'column', gap: 2, background: i === 2 ? 'var(--tn-yellow)' : 'rgba(255,255,255,.08)', color: i === 2 ? 'var(--tn-navy)' : '#fff', border: `2px solid ${i === 2 ? '#fff' : 'rgba(255,255,255,.4)'}`, borderRadius: 12, padding: '8px 12px' }}>
               <b style={{ fontSize: 14 }}>{t}</b><span style={{ fontSize: 12, opacity: 0.85 }}>{d}</span>

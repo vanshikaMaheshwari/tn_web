@@ -18,7 +18,7 @@ const istDay = (d = new Date()) => new Date(d.getTime() + 5.5 * 3600 * 1000).toI
 // Daily deadline digest
 // ------------------------------------------------------------------ //
 
-async function runDeadlineDigest({ hours = 48, programId = null, runId = null } = {}) {
+async function runDeadlineDigest({ hours = 48, programId = null, runId = null, via = 'inline' } = {}) {
   const now = Date.now();
   const horizon = now + hours * 3600 * 1000;
   const day = istDay();
@@ -50,7 +50,7 @@ async function runDeadlineDigest({ hours = 48, programId = null, runId = null } 
       withReminders += 1;
       dueSoon += items.filter((i) => !i.overdue).length;
       overdue += items.filter((i) => i.overdue).length;
-      await Reminder.updateOne({ mentee: _id, day }, { $set: { items, runId } }, { upsert: true });
+      await Reminder.updateOne({ mentee: _id, day }, { $set: { items, runId, via } }, { upsert: true });
     } else {
       await Reminder.deleteOne({ mentee: _id, day });
     }
@@ -62,7 +62,7 @@ async function runDeadlineDigest({ hours = 48, programId = null, runId = null } 
 // Weekly cohort report
 // ------------------------------------------------------------------ //
 
-async function buildCohortReport(programId, { runId = null, days = 7 } = {}) {
+async function buildCohortReport(programId, { runId = null, days = 7, via = 'inline' } = {}) {
   const program = await Program.findById(programId).populate('resources').lean();
   if (!program) throw new Error(`Program ${programId} not found`);
   const now = Date.now();
@@ -122,7 +122,7 @@ async function buildCohortReport(programId, { runId = null, days = 7 } = {}) {
   const rules = rulesSummary(program.name, stats);
   const report = await CohortReport.create({
     program: program._id, programName: program.name, periodStart: new Date(since), periodEnd: new Date(now),
-    stats, summary: rules.summary, highlights: rules.highlights, summarySource: 'rules', runId,
+    stats, summary: rules.summary, highlights: rules.highlights, summarySource: 'rules', runId, via,
   });
   return report;
 }

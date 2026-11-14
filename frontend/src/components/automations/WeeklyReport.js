@@ -2,14 +2,14 @@
 import { formatDate } from '@/lib/api';
 import Icon from '@/components/ui/Icon';
 
-// Weekly cohort report card (written by the "weeklyCohortReport" Render Workflow task).
+// Weekly cohort report card (written by the "weeklyCohortReport" job: Render Workflows or inline).
 export default function WeeklyReport({ report, compact }) {
   if (!report) {
     return (
       <div className="tn-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 6, borderStyle: 'dashed', boxShadow: 'none' }}>
         <span className="tn-mono" style={{ fontSize: 12, fontWeight: 700, color: 'var(--tn-blue-ink)' }}>WEEKLY_REPORT</span>
         <b style={{ fontSize: 16 }}>No report yet</b>
-        <span className="tn-muted" style={{ fontSize: 14 }}>A report is generated every Monday morning by Render Workflows. The core team can also run it now from Automations.</span>
+        <span className="tn-muted" style={{ fontSize: 14 }}>A report is generated every Monday morning. The core team can also run it now from Automations.</span>
       </div>
     );
   }
@@ -23,7 +23,7 @@ export default function WeeklyReport({ report, compact }) {
           <b style={{ fontFamily: 'var(--font-display)', fontSize: 22 }}>{formatDate(report.periodStart)} – {formatDate(report.periodEnd)}</b>
         </div>
         <span className="tn-mono" title="How this report was made" style={{ fontSize: 11, fontWeight: 700, border: '2px solid var(--tn-navy)', borderRadius: 999, padding: '2px 9px', background: report.summarySource === 'gemini' ? '#ece6ff' : 'var(--tn-sky)', whiteSpace: 'nowrap' }}>
-          {report.summarySource === 'gemini' ? `✦ Gemini summary` : '▦ Rules summary'} · Render Workflows
+          {report.summarySource === 'gemini' ? '✦ Gemini summary' : '▦ Rules summary'}{report.via === 'render-workflows' ? ' · Render Workflows' : ''}
         </span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 10 }}>

@@ -80,7 +80,7 @@ router.get('/reminders', authenticateMentee, async (req, res) => {
     const mentee = await Mentee.findById(req.mentee._id).select('completedResources.resource').lean();
     const done = new Set((mentee?.completedResources || []).map((c) => String(c.resource)));
     const items = r.items.filter((i) => !done.has(String(i.resource)));
-    res.json({ day: r.day, generatedAt: r.updatedAt || r.createdAt, items, via: r.runId ? 'render-workflows' : 'inline' });
+    res.json({ day: r.day, generatedAt: r.updatedAt || r.createdAt, items, via: r.via || 'inline' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

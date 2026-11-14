@@ -14,6 +14,7 @@ const CohortReportSchema = new mongoose.Schema({
   summarySource: { type: String, enum: ['gemini', 'rules'], default: 'rules' },
   model: String,
   runId: String,
+  via: { type: String, enum: ['render-workflows', 'inline'], default: 'inline' },
 }, { timestamps: true });
 
 CohortReportSchema.index({ program: 1, createdAt: -1 });
